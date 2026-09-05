@@ -2688,7 +2688,7 @@ function App() {
 
       {/* Live Game */}
       {inGame && state.live_game && (
-        <LiveGameView game={state.live_game} onViewPlayer={viewPlayer} />
+        <LiveGameView game={state.live_game} summonerName={state.summoner_name} onViewPlayer={viewPlayer} />
       )}
 
       {/* Champ select */}
@@ -5247,7 +5247,7 @@ function useAlertManager(
   }), [setAlerts]);
 }
 
-function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlayer?: (puuid: string) => void }) {
+function LiveGameView({ game, summonerName, onViewPlayer }: { game: LiveGameState; summonerName: string | null; onViewPlayer?: (puuid: string) => void }) {
   const ld = game.live_data;
   // Calculate total gold from players (unspent + items) instead of backend values
   const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
@@ -5273,7 +5273,17 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
   const alertManager = useAlertManager(setAlerts);
 
   // Find local player
-  const localPlayer = game.allies.find(p => p.live != null) ?? game.allies[0];
+  const localName = (summonerName ?? "").trim().toLowerCase();
+  const localNameShort = localName.split("#")[0];
+  const localPlayer = localNameShort
+    ? game.allies.find(p => {
+        const playerName = p.summoner_name.trim().toLowerCase();
+        return playerName === localName
+          || playerName === localNameShort
+          || playerName.startsWith(localNameShort + "#")
+          || playerName.split("#")[0] === localNameShort;
+      })
+    : undefined;
   const localLive = localPlayer?.live;
   const build = game.recommended_build;
   const localChampionInfo = useChampionName(localPlayer?.champion_id ?? null);

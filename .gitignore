@@ -1,0 +1,31 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.venv
+dist
+dist-ssr
+*.local
+
+# Restored from the pinned upstream commit before release builds.
+docs/screenshots/home-dashboard.png
+docs/screenshots/post-game.png
+src-tauri/resources/Assets.car
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.claude/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

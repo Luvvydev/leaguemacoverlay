@@ -148,6 +148,7 @@ interface MatchHistoryEntry {
   vision_score: number;
   gold_earned: number;
   total_damage: number;
+  items: number[];
   position?: string;
 }
 
@@ -288,6 +289,7 @@ interface AramBenchChampion {
 interface AppState {
   status: "disconnected" | "connected" | "champ_select" | "in_game" | "post_game";
   summoner_name: string | null;
+  profile_icon_id: number | null;
   champion_id: number | null;
   champion_locked: boolean;
   champion_name: string | null;
@@ -2088,6 +2090,7 @@ function runeIconUrl(iconPath: string): string { return `${DDRAGON}/img/${iconPa
 function championIconUrl(key: string): string { return `${DDRAGON}/${DDRAGON_VERSION}/img/champion/${key}.png`; }
 function spellIconUrl(id: number): string { const k = SPELL_KEYS[id]; return k ? `${DDRAGON}/${DDRAGON_VERSION}/img/spell/${k}.png` : ""; }
 function itemIconUrl(id: number): string { return `${DDRAGON}/${DDRAGON_VERSION}/img/item/${id}.png`; }
+function profileIconUrl(id: number): string { return `${DDRAGON}/${DDRAGON_VERSION}/img/profileicon/${id}.png`; }
 
 function useChampionName(id: number | null): { key: string; name: string } | null {
   const [info, setInfo] = useState<{ key: string; name: string } | null>(null);
@@ -2280,7 +2283,7 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
   );
 }
 
-function BuildSequencePanel({ slots, nextSlot, currentGold, threat, antiShield, penetration, alternatives, currentCoreIds }: {
+function BuildSequencePanel({ slots, nextSlot, currentGold, threat, antiShield, penetration, alternatives, currentCoreIds, starterItems, skillOrder }: {
   slots: BuildSlot[];
   nextSlot: BuildSlot | undefined;
   currentGold: number;
@@ -2289,6 +2292,8 @@ function BuildSequencePanel({ slots, nextSlot, currentGold, threat, antiShield, 
   penetration?: PenetrationAdvice | null;
   alternatives?: ItemOption[];
   currentCoreIds?: number[];
+  starterItems?: number[];
+  skillOrder?: string[];
 }) {
   // Top-3 alternative core paths sorted by WR, hide options matching the current build exactly.
   const currentSig = (currentCoreIds ?? []).slice(0, 3).join(",");
@@ -2327,6 +2332,30 @@ function BuildSequencePanel({ slots, nextSlot, currentGold, threat, antiShield, 
       {nextSlot && nextSlot.goldCost > 0 && (
         <div className="bs-progress-bar-wrap">
           <div className="bs-progress-bar" style={{ width: `${nextSlot.progressPct ?? 0}%` }} />
+        </div>
+      )}
+      {((starterItems?.length ?? 0) > 0 || (skillOrder?.length ?? 0) > 0) && (
+        <div className="bs-quick-guide">
+          {(starterItems?.length ?? 0) > 0 && (
+            <div className="bs-guide-block">
+              <span className="bs-guide-label">STARTING BUILD</span>
+              <div className="bs-guide-icons">
+                {starterItems!.map((itemId, index) => (
+                  <ItemIcon key={`${itemId}-${index}`} id={itemId} size={26} />
+                ))}
+              </div>
+            </div>
+          )}
+          {(skillOrder?.length ?? 0) > 0 && (
+            <div className="bs-guide-block">
+              <span className="bs-guide-label">SKILL ORDER</span>
+              <div className="bs-guide-skills">
+                {skillOrder!.map((skill, index) => (
+                  <span key={`${skill}-${index}`} className="bs-guide-skill">{skill}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       {penetration && (
@@ -2447,7 +2476,7 @@ function ChampionIcon({ championId, size = 36, className = "" }: { championId: n
 
 function App() {
   const [state, setState] = useState<AppState>({
-    status: "disconnected", summoner_name: null, champion_id: null, champion_locked: false,
+    status: "disconnected", summoner_name: null, profile_icon_id: null, champion_id: null, champion_locked: false,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
@@ -2629,15 +2658,24 @@ function App() {
       {/* Waiting / Match History */}
       {isConnected && !inChampSelect && !inGame && !inPostGame && (
         <section className="section-lobby">
+          <LobbyProfileOverview
+            name={state.summoner_name || "Summoner"}
+            profileIconId={state.profile_icon_id}
+            ranked={state.ranked}
+            history={state.match_history}
+          />
           {state.match_history.length > 0 ? (
             <>
               <LobbyBackground history={state.match_history} />
               <DailySummary history={state.match_history} lpHistory={state.lp_history} />
               <TiltGate history={state.match_history} />
+              <div className="profile-dashboard-grid">
+                <MatchHistoryView history={state.match_history} />
+                <ProfileChampionTable history={state.match_history} />
+              </div>
               <ChampionImprovement history={state.match_history} />
               {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
               {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
-              <MatchHistoryView history={state.match_history} />
             </>
           ) : (
             <div className="section-waiting">
@@ -3178,6 +3216,11 @@ function RecommendationCard({ rec }: { rec: RankedRecommendation }) {
 
 // --- Daily Summary ---
 
+function isCustomMatch(match: MatchHistoryEntry): boolean {
+  const mode = match.game_mode.toUpperCase();
+  return match.queue_id === 0 || mode.includes("CUSTOM") || mode.includes("PRACTICE");
+}
+
 function startOfTodayMs(): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);
@@ -3194,7 +3237,7 @@ function formatPlayedDuration(secs: number): string {
 
 function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lpHistory: LpEntry[] }) {
   const todayStart = startOfTodayMs();
-  const today = history.filter(m => m.timestamp >= todayStart && m.duration_secs > 60);
+  const today = history.filter(m => !isCustomMatch(m) && m.timestamp >= todayStart && m.duration_secs > 60);
   if (today.length === 0) return null;
 
   const wins = today.filter(m => m.win).length;
@@ -3300,7 +3343,7 @@ interface ChampStats {
 }
 
 function computeChampStats(games: MatchHistoryEntry[]): ChampStats | null {
-  const valid = games.filter(g => g.duration_secs > 60 && g.gold_earned > 0);
+  const valid = games.filter(g => !isCustomMatch(g) && g.duration_secs > 60 && g.gold_earned > 0);
   if (valid.length === 0) return null;
   let wins = 0, kdaSum = 0, csPerMinSum = 0, goldPerMinSum = 0;
   for (const g of valid) {
@@ -3327,7 +3370,7 @@ function deltaPct(value: number, baseline: number): number {
 function ChampionImprovement({ history }: { history: MatchHistoryEntry[] }) {
   const byChamp = new Map<number, MatchHistoryEntry[]>();
   for (const m of history) {
-    if (m.duration_secs < 60 || m.gold_earned === 0) continue;
+    if (isCustomMatch(m) || m.duration_secs < 60 || m.gold_earned === 0) continue;
     const arr = byChamp.get(m.champion_id) || [];
     arr.push(m);
     byChamp.set(m.champion_id, arr);
@@ -3735,6 +3778,311 @@ function LpChart({ history }: { history: LpEntry[] }) {
   );
 }
 
+// --- Personalized lobby profile ---
+
+interface ProfileLabel {
+  label: string;
+  description: string;
+  tone: "gold" | "green" | "blue" | "purple" | "red" | "orange" | "muted";
+}
+
+function validProfileGames(history: MatchHistoryEntry[]): MatchHistoryEntry[] {
+  return history.filter(m => !isCustomMatch(m) && m.duration_secs > 300 && m.gold_earned > 0);
+}
+
+function matchCsPerMinute(match: MatchHistoryEntry): number {
+  return match.duration_secs > 0 ? match.cs / (match.duration_secs / 60) : 0;
+}
+
+function matchKda(kills: number, deaths: number, assists: number): number {
+  return (kills + assists) / Math.max(1, deaths);
+}
+
+function buildProfileLabels(history: MatchHistoryEntry[]): ProfileLabel[] {
+  const games = validProfileGames(history);
+  if (games.length === 0) return [];
+
+  const labels: ProfileLabel[] = [];
+  const role = inferMainRole(games).role;
+  const totalMinutes = games.reduce((sum, game) => sum + game.duration_secs / 60, 0);
+  const csPerMinute = games.reduce((sum, game) => sum + game.cs, 0) / Math.max(1, totalMinutes);
+  const avgKda = games.reduce((sum, game) => sum + matchKda(game.kills, game.deaths, game.assists), 0) / games.length;
+  const visionPerMinute = games.reduce((sum, game) => sum + game.vision_score, 0) / Math.max(1, totalMinutes);
+  const damagePerMinute = games.reduce((sum, game) => sum + game.total_damage, 0) / Math.max(1, totalMinutes);
+  const averageDeaths = games.reduce((sum, game) => sum + game.deaths, 0) / games.length;
+  const averageTakedowns = games.reduce((sum, game) => sum + game.kills + game.assists, 0) / games.length;
+
+  let streak = 0;
+  for (const game of games) {
+    if (game.win) streak++;
+    else break;
+  }
+  if (streak >= 3) {
+    labels.push({
+      label: "HOT STREAK",
+      description: `You have won your last ${streak} games.`,
+      tone: "green",
+    });
+  }
+
+  let bounceChances = 0;
+  let bounceWins = 0;
+  for (let i = 0; i < games.length - 1; i++) {
+    const newer = games[i];
+    const older = games[i + 1];
+    if (!older.win) {
+      bounceChances++;
+      if (newer.win) bounceWins++;
+    }
+  }
+  if (bounceChances >= 3 && bounceWins / bounceChances >= 0.6) {
+    labels.push({
+      label: "BOUNCES BACK",
+      description: `You won ${bounceWins} of ${bounceChances} games immediately after a loss.`,
+      tone: "blue",
+    });
+  }
+
+  const wins = games.filter(game => game.win);
+  const losses = games.filter(game => !game.win);
+  if (wins.length >= 3 && losses.length >= 2) {
+    const winKda = wins.reduce((sum, game) => sum + matchKda(game.kills, game.deaths, game.assists), 0) / wins.length;
+    const lossKda = losses.reduce((sum, game) => sum + matchKda(game.kills, game.deaths, game.assists), 0) / losses.length;
+    if (winKda >= lossKda * 1.35) {
+      labels.push({
+        label: "SNOWBALLS",
+        description: `Your KDA rises from ${lossKda.toFixed(1)} in losses to ${winKda.toFixed(1)} in wins.`,
+        tone: "purple",
+      });
+    }
+  }
+
+  if (role !== "UTILITY" && csPerMinute >= 7) {
+    labels.push({
+      label: "GOOD CSER",
+      description: `You average ${csPerMinute.toFixed(1)} CS per minute across ${games.length} recent games.`,
+      tone: "gold",
+    });
+  }
+  const visionTarget = role === "UTILITY" ? 1.8 : role === "JUNGLE" ? 0.9 : 0.6;
+  if (visionPerMinute >= visionTarget) {
+    labels.push({
+      label: "GOOD VISION",
+      description: `You average ${visionPerMinute.toFixed(1)} vision score per minute, above the ${visionTarget.toFixed(1)} target for ${role || "your recent roles"}.`,
+      tone: "green",
+    });
+  }
+  if (avgKda >= 3.5) {
+    labels.push({
+      label: "HIGH IMPACT",
+      description: `You average a ${avgKda.toFixed(1)} KDA across ${games.length} recent games.`,
+      tone: "green",
+    });
+  }
+
+  const byChampion = new Map<number, MatchHistoryEntry[]>();
+  for (const game of games) {
+    const championGames = byChampion.get(game.champion_id) || [];
+    championGames.push(game);
+    byChampion.set(game.champion_id, championGames);
+  }
+  const topChampion = [...byChampion.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+  if (topChampion) {
+    const [championId, championGames] = topChampion;
+    const championName = championCache?.[championId.toString()]?.name || "Champion";
+    const championStats = computeChampStats(championGames);
+    if (championGames.length >= 5 && championGames.length / games.length >= 0.4) {
+      labels.push({
+        label: `${championName.toUpperCase()} SPECIALIST`,
+        description: `${championGames.length} of your ${games.length} recent games were on ${championName}.`,
+        tone: "purple",
+      });
+    }
+    if (championStats && championStats.games >= 5 && championStats.winRate >= 0.65 && championStats.kda >= 4) {
+      labels.push({
+        label: `GODLIKE ${championName.toUpperCase()}`,
+        description: `${(championStats.winRate * 100).toFixed(0)}% win rate and ${championStats.kda.toFixed(1)} KDA across ${championStats.games} recent ${championName} games.`,
+        tone: "gold",
+      });
+    }
+  }
+
+  const roleCounts = new Set(games.map(game => (game.position || "").toUpperCase()).filter(Boolean));
+  if (roleCounts.size >= 3) {
+    labels.push({
+      label: "FLEXIBLE",
+      description: `You played ${roleCounts.size} different positions in your recent games.`,
+      tone: "blue",
+    });
+  }
+  if (damagePerMinute >= 700) {
+    labels.push({
+      label: "HIGH DAMAGE",
+      description: `You average ${Math.round(damagePerMinute)} champion damage per minute.`,
+      tone: "red",
+    });
+  }
+  if (averageDeaths <= 4 && avgKda >= 2.5) {
+    labels.push({
+      label: "SAFE PLAYER",
+      description: `You average ${averageDeaths.toFixed(1)} deaths with a ${avgKda.toFixed(1)} KDA.`,
+      tone: "blue",
+    });
+  }
+  if (averageTakedowns >= 12) {
+    labels.push({
+      label: "FIGHT HEAVY",
+      description: `You average ${averageTakedowns.toFixed(1)} kills plus assists per game.`,
+      tone: "orange",
+    });
+  }
+
+  return labels.slice(0, 6);
+}
+
+function ProfileLabelChip({ badge }: { badge: ProfileLabel }) {
+  return (
+    <Tooltip content={
+      <div className="tt-item">
+        <span className="tt-name">{badge.label}</span>
+        <span className="tt-desc">{badge.description}</span>
+      </div>
+    }>
+      <span className={`profile-label profile-label-${badge.tone}`}>{badge.label}</span>
+    </Tooltip>
+  );
+}
+
+function ProfileStatRing({ value, label, progress, tone }: { value: string; label: string; progress: number; tone: "blue" | "green" | "gold" }) {
+  const degrees = Math.max(0, Math.min(1, progress)) * 360;
+  return (
+    <div className="profile-stat-ring-wrap">
+      <div className={`profile-stat-ring profile-stat-ring-${tone}`} style={{ "--ring-progress": `${degrees}deg` } as React.CSSProperties}>
+        <div className="profile-stat-ring-inner">{value}</div>
+      </div>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function LobbyProfileOverview({ name, profileIconId, ranked, history }: {
+  name: string;
+  profileIconId: number | null;
+  ranked: RankedInfo | null;
+  history: MatchHistoryEntry[];
+}) {
+  const games = validProfileGames(history);
+  const wins = games.filter(game => game.win).length;
+  const winRate = games.length > 0 ? wins / games.length : 0;
+  const averageKda = games.length > 0
+    ? games.reduce((sum, game) => sum + matchKda(game.kills, game.deaths, game.assists), 0) / games.length
+    : 0;
+  const totalMinutes = games.reduce((sum, game) => sum + game.duration_secs / 60, 0);
+  const csPerMinute = games.reduce((sum, game) => sum + game.cs, 0) / Math.max(1, totalMinutes);
+  const mainRole = inferMainRole(games).role;
+  const labels = buildProfileLabels(history);
+  const rankText = ranked && ranked.tier !== "UNRANKED"
+    ? `${ranked.tier} ${ranked.rank}`
+    : "Unranked";
+
+  return (
+    <section className="profile-overview">
+      <div className="profile-identity-card">
+        <div className="profile-avatar-shell">
+          {profileIconId && profileIconId > 0 ? (
+            <img className="profile-avatar" src={profileIconUrl(profileIconId)} alt={`${name} profile icon`} />
+          ) : (
+            <div className="profile-avatar-fallback">{name.slice(0, 1).toUpperCase()}</div>
+          )}
+        </div>
+        <div className="profile-identity-copy">
+          <span className="profile-eyebrow">YOUR PROFILE</span>
+          <h2>{name}</h2>
+          <div className="profile-rank-line">
+            <RankEmblem rank={ranked?.tier || ""} size={30} />
+            <strong>{rankText}</strong>
+            {ranked && ranked.tier !== "UNRANKED" && <span>{ranked.lp} LP</span>}
+            {mainRole && <span className="profile-main-role"><PositionIcon pos={mainRole} size={14} /> {POSITION_LABELS[mainRole] || mainRole}</span>}
+          </div>
+        </div>
+        <div className="profile-record">
+          <span className="profile-record-label">Recent record</span>
+          <strong><span className="mh-wins">{wins}W</span> <span className="mh-losses">{games.length - wins}L</span></strong>
+          <span>{games.length} tracked games</span>
+        </div>
+      </div>
+
+      <div className="profile-summary-card">
+        <ProfileStatRing value={`${Math.round(winRate * 100)}%`} label="Win rate" progress={winRate} tone="green" />
+        <ProfileStatRing value={averageKda.toFixed(1)} label="Average KDA" progress={averageKda / 6} tone="gold" />
+        <ProfileStatRing value={csPerMinute.toFixed(1)} label="CS per minute" progress={csPerMinute / 10} tone="blue" />
+      </div>
+
+      <div className="profile-personality-card">
+        <span className="profile-card-title">YOUR PLAYSTYLE</span>
+        <div className="profile-label-list">
+          {labels.length > 0 ? labels.map(label => <ProfileLabelChip key={label.label} badge={label} />) : (
+            <span className="profile-label-empty">Play a few full games to build your profile.</span>
+          )}
+        </div>
+        <span className="profile-hover-hint">Hover a label to see why you earned it</span>
+      </div>
+    </section>
+  );
+}
+
+function ProfileChampionTable({ history }: { history: MatchHistoryEntry[] }) {
+  const byChampion = new Map<number, MatchHistoryEntry[]>();
+  for (const match of validProfileGames(history)) {
+    const games = byChampion.get(match.champion_id) || [];
+    games.push(match);
+    byChampion.set(match.champion_id, games);
+  }
+  const champions = [...byChampion.entries()]
+    .map(([championId, games]) => ({ championId, games, stats: computeChampStats(games)! }))
+    .sort((a, b) => b.games.length - a.games.length || b.stats.winRate - a.stats.winRate)
+    .slice(0, 6);
+  const maxGames = Math.max(...champions.map(champion => champion.games.length), 1);
+
+  return (
+    <aside className="profile-champion-table">
+      <div className="profile-champion-header">
+        <div>
+          <span className="profile-card-title">YOUR CHAMPIONS</span>
+          <span className="profile-card-subtitle">Recent performance</span>
+        </div>
+        <span className="profile-champion-count">{byChampion.size} played</span>
+      </div>
+      <div className="profile-champion-columns">
+        <span>Champion</span><span>Played</span><span>Win rate</span>
+      </div>
+      <div className="profile-champion-list">
+        {champions.map(champion => (
+          <div className="profile-champion-row" key={champion.championId}>
+            <div className="profile-champion-name">
+              <ChampionIcon championId={champion.championId} size={34} />
+              <div>
+                <strong><ChampionNameLabel championId={champion.championId} fallback="Champion" /></strong>
+                <span>{champion.stats.kda.toFixed(1)} KDA · {champion.stats.csPerMin.toFixed(1)} CS/min</span>
+              </div>
+            </div>
+            <div className="profile-champion-metric">
+              <strong>{champion.games.length}</strong>
+              <div className="profile-mini-bar"><span style={{ width: `${(champion.games.length / maxGames) * 100}%` }} /></div>
+            </div>
+            <div className="profile-champion-metric">
+              <strong className={champion.stats.winRate >= 0.55 ? "lg-wr-good" : champion.stats.winRate < 0.45 ? "lg-wr-bad" : ""}>
+                {(champion.stats.winRate * 100).toFixed(0)}%
+              </strong>
+              <div className="profile-mini-bar profile-mini-bar-win"><span style={{ width: `${champion.stats.winRate * 100}%` }} /></div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </aside>
+  );
+}
+
 // --- Match History View ---
 
 function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
@@ -3744,19 +4092,21 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
 
   let modeFiltered = history;
   if (modeFilter === "ranked") modeFiltered = modeFiltered.filter(m => m.queue_id === 420 || m.queue_id === 440);
-  else if (modeFilter === "normal") modeFiltered = modeFiltered.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490);
+  else if (modeFilter === "swiftplay") modeFiltered = modeFiltered.filter(m => m.queue_id === 490);
+  else if (modeFilter === "normal") modeFiltered = modeFiltered.filter(m => m.queue_id === 400 || m.queue_id === 430);
   else if (modeFilter === "aram") modeFiltered = modeFiltered.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM");
   const filtered = champFilter ? modeFiltered.filter(m => m.champion_id === champFilter) : modeFiltered;
   const visible = showAll ? filtered : filtered.slice(0, 10);
 
-  const wins = filtered.filter(h => h.win).length;
-  const losses = filtered.length - wins;
-  const wr = filtered.length > 0 ? ((wins / filtered.length) * 100).toFixed(0) : "0";
+  const counted = filtered.filter(match => !isCustomMatch(match));
+  const wins = counted.filter(h => h.win).length;
+  const losses = counted.length - wins;
+  const wr = counted.length > 0 ? ((wins / counted.length) * 100).toFixed(0) : "0";
 
   // Calculate current streak
   let streakCount = 0;
-  let streakWin = filtered.length > 0 ? filtered[0].win : true;
-  for (const m of filtered) {
+  let streakWin = counted.length > 0 ? counted[0].win : true;
+  for (const m of counted) {
     if (m.win === streakWin) streakCount++;
     else break;
   }
@@ -3775,18 +4125,20 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
             <span className="mh-wins">{wins}W</span> <span className="mh-losses">{losses}L</span>
           </span>
           <span className="mh-wr">{wr}% WR</span>
+          {filtered.some(isCustomMatch) && <span className="mh-record-note">Custom excluded</span>}
         </div>
       </div>
       {/* Mode filter tabs */}
       <div className="mh-mode-tabs">
-        {["all", "ranked", "normal", "aram"].map(mode => (
+        {["all", "ranked", "swiftplay", "normal", "aram"].map(mode => (
           <button key={mode} className={`mh-mode-tab ${modeFilter === mode ? "mh-mode-active" : ""}`}
             onClick={() => { setModeFilter(mode); setShowAll(false); }}>
-            {mode === "all" ? "All" : mode === "ranked" ? "Ranked" : mode === "normal" ? "Normal" : "ARAM"}
+            {mode === "all" ? "All" : mode === "ranked" ? "Ranked" : mode === "swiftplay" ? "Swiftplay" : mode === "normal" ? "Normal" : "ARAM"}
             {mode !== "all" && (
               <span className="mh-mode-count">
                 {mode === "ranked" ? history.filter(m => m.queue_id === 420 || m.queue_id === 440).length
-                  : mode === "normal" ? history.filter(m => m.queue_id === 400 || m.queue_id === 430 || m.queue_id === 490).length
+                  : mode === "swiftplay" ? history.filter(m => m.queue_id === 490).length
+                  : mode === "normal" ? history.filter(m => m.queue_id === 400 || m.queue_id === 430).length
                   : history.filter(m => m.queue_id === 450 || m.queue_id === 900 || m.game_mode === "ARAM").length}
               </span>
             )}
@@ -3798,7 +4150,7 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
       <ChampionStatsBar history={modeFiltered} filter={champFilter} onFilter={setChampFilter} />
 
       <div className="mh-trend">
-        {filtered.slice(0, 15).map((m, i) => (
+        {counted.slice(0, 15).map((m, i) => (
           <div key={i} className={`mh-trend-dot ${m.win ? "trend-win" : "trend-loss"}`} title={m.win ? "Win" : "Loss"} />
         ))}
       </div>
@@ -3821,47 +4173,308 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
   );
 }
 
+interface PerformanceRow {
+  player: PostGamePlayer;
+  won: boolean;
+  teamIndex: number;
+  score: number;
+  place: number;
+  badges: ProfileLabel[];
+}
+
+function percentile(values: number[], value: number, lowerIsBetter = false): number {
+  if (values.length <= 1) return 0.5;
+  const below = values.filter(candidate => lowerIsBetter ? candidate > value : candidate < value).length;
+  const equal = values.filter(candidate => candidate === value).length;
+  return (below + Math.max(0, equal - 1) * 0.5) / (values.length - 1);
+}
+
+function performanceRanking(stats: PostGameStats): PerformanceRow[] {
+  const entries = stats.teams.flatMap((team, teamIndex) => team.players.map(player => ({ player, won: team.is_winner, teamIndex })));
+  const minutes = Math.max(1, stats.game_duration_secs / 60);
+  const kdas = entries.map(({ player }) => matchKda(player.kills, player.deaths, player.assists));
+  const damages = entries.map(({ player }) => player.damage_share);
+  const participations = entries.map(({ player }) => player.kill_participation);
+  const gold = entries.map(({ player }) => player.gold_earned / minutes);
+  const farm = entries.map(({ player }) => player.cs / minutes);
+  const vision = entries.map(({ player }) => player.vision_score / minutes);
+  const deaths = entries.map(({ player }) => player.deaths);
+
+  const scored = entries.map(entry => {
+    const player = entry.player;
+    const role = player.position.toUpperCase();
+    const isSupport = role === "UTILITY" || role === "SUPPORT";
+    const isJungle = role === "JUNGLE";
+    const metrics = {
+      kda: percentile(kdas, matchKda(player.kills, player.deaths, player.assists)),
+      damage: percentile(damages, player.damage_share),
+      participation: percentile(participations, player.kill_participation),
+      gold: percentile(gold, player.gold_earned / minutes),
+      farm: percentile(farm, player.cs / minutes),
+      vision: percentile(vision, player.vision_score / minutes),
+      survival: percentile(deaths, player.deaths, true),
+    };
+    const score = isSupport
+      ? metrics.kda * 20 + metrics.damage * 5 + metrics.participation * 24 + metrics.gold * 6 + metrics.farm * 2 + metrics.vision * 25 + metrics.survival * 18
+      : isJungle
+        ? metrics.kda * 20 + metrics.damage * 15 + metrics.participation * 20 + metrics.gold * 12 + metrics.farm * 12 + metrics.vision * 10 + metrics.survival * 11
+        : metrics.kda * 22 + metrics.damage * 20 + metrics.participation * 15 + metrics.gold * 15 + metrics.farm * 15 + metrics.vision * 5 + metrics.survival * 8;
+    return { ...entry, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const maxDamage = Math.max(...entries.map(entry => entry.player.total_damage), 0);
+  const maxKda = Math.max(...kdas, 0);
+  const maxGold = Math.max(...entries.map(entry => entry.player.gold_earned), 0);
+  const maxDamageTaken = Math.max(...entries.map(entry => entry.player.damage_taken), 0);
+  return scored.map((entry, index) => {
+    const place = index + 1;
+    const player = entry.player;
+    const role = player.position.toUpperCase();
+    const csPerMinute = player.cs / minutes;
+    const visionPerMinute = player.vision_score / minutes;
+    const badges: ProfileLabel[] = [];
+
+    if (place === 1) badges.push({
+      label: "MVP",
+      description: `Ranked #1 of 10 with a ${entry.score.toFixed(0)} LuvvyScore.`,
+      tone: "gold",
+    });
+    if (!entry.won && (place <= 3 || entry.score >= 72)) badges.push({
+      label: "UNLUCKY",
+      description: `Ranked #${place} overall with a ${entry.score.toFixed(0)} LuvvyScore despite the loss.`,
+      tone: "purple",
+    });
+    const csThreshold = role === "JUNGLE" ? 7 : role === "UTILITY" || role === "SUPPORT" ? Number.POSITIVE_INFINITY : 8;
+    if (csPerMinute >= csThreshold) badges.push({
+      label: "CS GOD",
+      description: `${csPerMinute.toFixed(1)} CS per minute, above the ${csThreshold.toFixed(1)} threshold for ${role || "this role"}.`,
+      tone: "blue",
+    });
+    if (player.total_damage === maxDamage && maxDamage > 0) badges.push({
+      label: "DAMAGE CARRY",
+      description: `${formatNumber(player.total_damage)} champion damage, the most in this match.`,
+      tone: "red",
+    });
+    if (matchKda(player.kills, player.deaths, player.assists) === maxKda && maxKda >= 4) badges.push({
+      label: "KDA KING",
+      description: `${maxKda.toFixed(1)} KDA, the highest in this match.`,
+      tone: "green",
+    });
+    if (visionPerMinute >= (role === "UTILITY" || role === "SUPPORT" ? 2 : 1.2)) badges.push({
+      label: "VISIONARY",
+      description: `${visionPerMinute.toFixed(1)} vision score per minute.`,
+      tone: "blue",
+    });
+    if (player.kill_participation >= 0.7) badges.push({
+      label: "TEAM PLAYER",
+      description: `${Math.round(player.kill_participation * 100)}% kill participation.`,
+      tone: "green",
+    });
+    if (player.gold_earned === maxGold && maxGold > 0) badges.push({
+      label: "MILLIONAIRE",
+      description: `${formatNumber(player.gold_earned)} gold, the most earned in this match.`,
+      tone: "gold",
+    });
+    if (player.damage_taken === maxDamageTaken && maxDamageTaken > 0) badges.push({
+      label: "FRONTLINE",
+      description: `${formatNumber(player.damage_taken)} damage taken, the most in this match.`,
+      tone: "orange",
+    });
+    if (player.wards_killed >= 5) badges.push({
+      label: "WARD HUNTER",
+      description: `${player.wards_killed} enemy wards cleared.`,
+      tone: "green",
+    });
+    if (player.penta_kills > 0 || player.quadra_kills > 0 || player.triple_kills > 0) badges.push({
+      label: player.penta_kills > 0 ? "PENTAKILL" : player.quadra_kills > 0 ? "QUADRAKILL" : "TRIPLEKILL",
+      description: player.penta_kills > 0 ? "Scored a pentakill." : player.quadra_kills > 0 ? "Scored a quadrakill." : "Scored a triplekill.",
+      tone: "purple",
+    });
+    if (player.deaths <= 2 && player.kills + player.assists >= 10) badges.push({
+      label: "SURVIVOR",
+      description: `${player.kills + player.assists} takedowns with only ${player.deaths} deaths.`,
+      tone: "blue",
+    });
+
+    return { ...entry, score: Math.round(entry.score), place, badges: badges.slice(0, 4) };
+  });
+}
+
+function compactMatchBadges(match: MatchHistoryEntry): ProfileLabel[] {
+  const badges: ProfileLabel[] = [];
+  if (isCustomMatch(match)) badges.push({
+    label: "CUSTOM",
+    description: "Shown in match history but excluded from records, streaks, and profile averages.",
+    tone: "muted",
+  });
+  const role = (match.position || "").toUpperCase();
+  const csPerMinute = matchCsPerMinute(match);
+  const csThreshold = role === "JUNGLE" ? 7 : role === "UTILITY" ? Number.POSITIVE_INFINITY : 8;
+  if (csPerMinute >= csThreshold) badges.push({
+    label: "CS GOD",
+    description: `${csPerMinute.toFixed(1)} CS per minute in this match.`,
+    tone: "blue",
+  });
+  if (match.deaths === 0 && match.kills + match.assists >= 5) badges.push({
+    label: "UNTOUCHABLE",
+    description: `${match.kills + match.assists} takedowns without dying.`,
+    tone: "gold",
+  });
+  if (matchKda(match.kills, match.deaths, match.assists) >= 5) badges.push({
+    label: "HIGH KDA",
+    description: `${matchKda(match.kills, match.deaths, match.assists).toFixed(1)} KDA in this match.`,
+    tone: "green",
+  });
+  return badges.slice(0, 2);
+}
+
+function ExpandedMatchPreview({ match, details, loading, error }: {
+  match: MatchHistoryEntry;
+  details: PostGameStats | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) return <div className="mh-expanded-state"><span className="mh-detail-spinner" /> Loading ten player performance...</div>;
+  if (error) return <div className="mh-expanded-state mh-expanded-error">Could not load match details: {error}</div>;
+  if (!details) return null;
+
+  const rows = performanceRanking(details);
+  const minutes = Math.max(1, details.game_duration_secs / 60);
+  return (
+    <div className="mh-expanded" onClick={event => event.stopPropagation()}>
+      <div className="mh-expanded-header">
+        <div>
+          <strong>Performance ranking</strong>
+          <span>Role adjusted LuvvyScore ranks all ten players from this match.</span>
+        </div>
+        <button className="btn btn-sm" onClick={() => invoke("view_match_details", { gameId: match.game_id })}>
+          Full analysis
+        </button>
+      </div>
+      <div className="mh-performance-teams">
+        {details.teams.map((team, teamIndex) => {
+          const teamRows = rows.filter(row => row.teamIndex === teamIndex).sort((a, b) => a.place - b.place);
+          const teamTone = team.is_winner ? "blue" : "red";
+          return (
+            <section key={teamIndex} className={`mh-performance-team mh-performance-team-${teamTone}`}>
+              <div className="mh-performance-team-header">
+                <strong>{team.is_winner ? "Victory" : "Defeat"}</strong>
+                <span>{teamRows.reduce((sum, row) => sum + row.player.kills, 0)} team kills</span>
+              </div>
+              <div className="mh-performance-head">
+                <span>#</span><span>Player</span><span>KDA</span><span>CS/min</span><span>Score and badges</span>
+              </div>
+              <div className="mh-performance-list">
+                {teamRows.map((row, rowIndex) => (
+                  <div key={`${row.player.puuid}-${row.player.champion_id}-${rowIndex}`} className={`mh-performance-row ${row.player.is_local ? "mh-performance-local" : ""}`}>
+                    <span className={`mh-performance-place mh-performance-place-${Math.min(row.place, 4)}`}>#{row.place}</span>
+                    <div className="mh-performance-player">
+                      <ChampionIcon championId={row.player.champion_id} size={32} />
+                      <div>
+                        <strong>{row.player.summoner_name}</strong>
+                        <span>{POSITION_LABELS[row.player.position] || row.player.position || "Role unknown"} · {formatNumber(row.player.total_damage)} dmg · {Math.round(row.player.kill_participation * 100)}% KP</span>
+                        <div className="mh-performance-items">
+                          {row.player.items.slice(0, 6).map((itemId, itemIndex) => <ItemIcon key={`${itemId}-${itemIndex}`} id={itemId} size={14} />)}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="mh-performance-kda">{row.player.kills}/{row.player.deaths}/{row.player.assists}</span>
+                    <span>{(row.player.cs / minutes).toFixed(1)}</span>
+                    <div className="mh-performance-score">
+                      <strong>{row.score}</strong>
+                      <div className="mh-row-badges">
+                        {row.badges.map(badge => <ProfileLabelChip key={badge.label} badge={badge} />)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+      <p className="mh-score-note">LuvvyScore compares KDA, damage share, kill participation, gold, farm, vision, and survival. Role weights keep support and jungle performance comparable.</p>
+    </div>
+  );
+}
+
 function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
   const champInfo = useChampionName(m.champion_id);
   const kda = m.deaths === 0 ? "Perfect" : ((m.kills + m.assists) / m.deaths).toFixed(1);
   const mins = Math.floor(m.duration_secs / 60);
   const ago = timeAgo(m.timestamp);
   const total = m.kills + m.deaths + m.assists || 1;
+  const badges = compactMatchBadges(m);
+  const [expanded, setExpanded] = useState(false);
+  const [details, setDetails] = useState<PostGameStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  async function toggleExpanded() {
+    const next = !expanded;
+    setExpanded(next);
+    if (!next || details || loading) return;
+    setLoading(true);
+    setDetailError(null);
+    try {
+      setDetails(await invoke<PostGameStats>("get_match_details_preview", { gameId: m.game_id }));
+    } catch (error) {
+      setDetailError(String(error));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
-    <div className={`mh-row ${m.win ? "mh-row-win" : "mh-row-loss"}`}
-      onClick={() => invoke("view_match_details", { gameId: m.game_id })}
-      style={{ cursor: "pointer" }}>
-      <div className={`mh-result ${m.win ? "win" : "loss"}`}>{m.win ? "W" : "L"}</div>
-      <ChampionIcon championId={m.champion_id} size={36} />
-      <div className="mh-info">
-        <span className="mh-champ">{champInfo?.name || "..."}</span>
-        <span className="mh-mode">{queueLabel(m.queue_id, m.game_mode)}</span>
+    <div className={`mh-match-card ${expanded ? "mh-match-card-open" : ""}`}>
+      <div className={`mh-row ${m.win ? "mh-row-win" : "mh-row-loss"}`}
+        onClick={toggleExpanded}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={event => { if (event.key === "Enter" || event.key === " ") toggleExpanded(); }}
+        style={{ cursor: "pointer" }}>
+        <div className={`mh-result ${m.win ? "win" : "loss"}`}>{m.win ? "W" : "L"}</div>
+        <ChampionIcon championId={m.champion_id} size={36} />
+        <div className="mh-info">
+          <span className="mh-champ">{champInfo?.name || "..."}</span>
+          <span className="mh-mode">{queueLabel(m.queue_id, m.game_mode)}</span>
+        </div>
+        <div className="mh-kda-col">
+          <span className="pg-kda">
+            <span className="pg-k">{m.kills}</span>
+            <span className="pg-sep">/</span>
+            <span className="pg-d">{m.deaths}</span>
+            <span className="pg-sep">/</span>
+            <span className="pg-a">{m.assists}</span>
+          </span>
+          <span className="pg-kda-ratio">{kda} KDA</span>
+        </div>
+        <div className="mh-kda-bar">
+          <div className="mh-kda-bar-k" style={{ width: `${(m.kills / total) * 100}%` }} />
+          <div className="mh-kda-bar-d" style={{ width: `${(m.deaths / total) * 100}%` }} />
+          <div className="mh-kda-bar-a" style={{ width: `${(m.assists / total) * 100}%` }} />
+        </div>
+        <span className="mh-cs-minute">{matchCsPerMinute(m).toFixed(1)} CS/min</span>
+        <div className="mh-history-items">
+          {(m.items || []).slice(0, 6).map((itemId, index) => <ItemIcon key={`${itemId}-${index}`} id={itemId} size={18} />)}
+        </div>
+        <div className="mh-row-badges">
+          {badges.map(badge => <ProfileLabelChip key={badge.label} badge={badge} />)}
+        </div>
+        <span className="mh-duration">{mins}m</span>
+        <div className="mh-spacer" />
+        <span className="mh-ago">{ago}</span>
+        <span className={`mh-expand-arrow ${expanded ? "mh-expand-arrow-open" : ""}`}>⌄</span>
       </div>
-      <div className="mh-kda-col">
-        <span className="pg-kda">
-          <span className="pg-k">{m.kills}</span>
-          <span className="pg-sep">/</span>
-          <span className="pg-d">{m.deaths}</span>
-          <span className="pg-sep">/</span>
-          <span className="pg-a">{m.assists}</span>
-        </span>
-        <span className="pg-kda-ratio">{kda} KDA</span>
-      </div>
-      <div className="mh-kda-bar">
-        <div className="mh-kda-bar-k" style={{ width: `${(m.kills / total) * 100}%` }} />
-        <div className="mh-kda-bar-d" style={{ width: `${(m.deaths / total) * 100}%` }} />
-        <div className="mh-kda-bar-a" style={{ width: `${(m.assists / total) * 100}%` }} />
-      </div>
-      <span className="mh-duration">{mins}m</span>
-      <div className="mh-spacer" />
-      <span className="mh-ago">{ago}</span>
+      {expanded && <ExpandedMatchPreview match={m} details={details} loading={loading} error={detailError} />}
     </div>
   );
 }
 
 function queueLabel(queueId: number, gameMode: string): string {
   // Common queue IDs
+  if (queueId === 0 || gameMode.toUpperCase().includes("CUSTOM") || gameMode.toUpperCase().includes("PRACTICE")) return "Custom Game";
   if (queueId === 420) return "Ranked Solo";
   if (queueId === 440) return "Ranked Flex";
   if (queueId === 450 || queueId === 900) return "ARAM";
@@ -4352,16 +4965,46 @@ function DamageCompBar({ allies, enemies }: { allies: DraftPlayer[]; enemies: Dr
   );
 }
 
-function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string }[] {
-  const labels: { text: string; cls: string }[] = [];
-  if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions <= 3) labels.push({ text: "OTP", cls: "label-otp" });
-  if (p.champ_games === 0) labels.push({ text: "1st TIME", cls: "label-autofill" });
-  if (p.streak >= 4) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
-  else if (p.streak <= -4) labels.push({ text: "TILTED", cls: "label-tilted" });
-  else if (p.streak <= -3) labels.push({ text: `${Math.abs(p.streak)}L Streak`, cls: "label-lossstreak" });
-  else if (p.streak >= 3) labels.push({ text: `${p.streak}W Streak`, cls: "label-winstreak" });
-  if (p.ranked_losses > 0 && p.ranked_win_rate >= 0.58 && (p.ranked_wins + p.ranked_losses) >= 20) labels.push({ text: "HIGH WR", cls: "label-highwr" });
-  return labels;
+function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string; title: string }[] {
+  const labels: { text: string; cls: string; title: string }[] = [];
+  const rankedGames = p.ranked_wins + p.ranked_losses;
+  const championWinRate = p.champ_games > 0 ? p.champ_wins / p.champ_games : 0;
+  if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions <= 3) labels.push({
+    text: "OTP",
+    cls: "label-otp",
+    title: `${p.smurf.unique_champions} champions across ${p.smurf.games_played} recent games.`,
+  });
+  if (p.champ_games === 0) labels.push({ text: "FIRST TIME", cls: "label-autofill", title: "No recent games found on this champion." });
+  if (p.streak >= 3) labels.push({ text: `${p.streak}W STREAK`, cls: "label-winstreak", title: `${p.streak} consecutive wins in recent games.` });
+  else if (p.streak <= -4) labels.push({ text: "TILTED", cls: "label-tilted", title: `${Math.abs(p.streak)} consecutive losses in recent games.` });
+  else if (p.streak <= -3) labels.push({ text: `${Math.abs(p.streak)}L STREAK`, cls: "label-lossstreak", title: `${Math.abs(p.streak)} consecutive losses in recent games.` });
+  if (rankedGames >= 20 && p.ranked_win_rate >= 0.58) labels.push({
+    text: "HIGH WINRATE",
+    cls: "label-highwr",
+    title: `${(p.ranked_win_rate * 100).toFixed(1)}% win rate across ${rankedGames} ranked games.`,
+  });
+  if (p.champ_games >= 50) labels.push({
+    text: "CHAMP SPECIALIST",
+    cls: "label-specialist",
+    title: `${p.champ_games} recent games played on this champion.`,
+  });
+  if (p.champ_games >= 20 && championWinRate >= 0.58) labels.push({
+    text: "HOT PICK",
+    cls: "label-hotpick",
+    title: `${(championWinRate * 100).toFixed(1)}% win rate over ${p.champ_games} games on this champion.`,
+  });
+  if (p.champ_games >= 10 && championWinRate <= 0.42) labels.push({
+    text: "STRUGGLES ON PICK",
+    cls: "label-struggles",
+    title: `${(championWinRate * 100).toFixed(1)}% win rate over ${p.champ_games} games on this champion.`,
+  });
+  if (p.champ_games >= 10 && p.champ_kda >= 4) labels.push({
+    text: "HIGH KDA",
+    cls: "label-highkda",
+    title: `${p.champ_kda.toFixed(1)} average KDA over ${p.champ_games} games on this champion.`,
+  });
+  if (rankedGames >= 300) labels.push({ text: "VETERAN", cls: "label-veteran", title: `${rankedGames} ranked games recorded.` });
+  return labels.slice(0, 5);
 }
 
 interface SpellCdProps {
@@ -4423,6 +5066,7 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
   const totalGames = p.ranked_wins + p.ranked_losses;
   const champWr = p.champ_games > 0 ? (p.champ_wins / p.champ_games * 100) : 0;
   const live = p.live;
+  const labels = getPlayerLabels(p);
   return (
     <div className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
       <div className="lg-champ-col">
@@ -4461,9 +5105,6 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
               {(p.ranked_win_rate * 100).toFixed(0)}%
             </span>
           )}
-          {getPlayerLabels(p).map((l, li) => (
-            <span key={li} className={`player-label ${l.cls}`}>{l.text}</span>
-          ))}
         </span>
       </div>
       {live && (live.spell1_id > 0 || live.spell2_id > 0) && (
@@ -4481,6 +5122,13 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
           )}
         </div>
       )}
+      {labels.length > 0 && (
+        <div className="lg-player-labels">
+          {labels.map((label, index) => (
+            <span key={`${label.text}-${index}`} className={`player-label ${label.cls}`} title={label.title}>{label.text}</span>
+          ))}
+        </div>
+      )}
       {live ? (
         <div className="lg-player-live">
           <span className="lg-live-kda">
@@ -4495,23 +5143,18 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
         </div>
       ) : (
         <div className="lg-player-stats">
-          {p.champ_games > 0 ? (
-            <div className="lg-champ-stats">
-              <span className={`lg-champ-wr ${champWr >= 55 ? "lg-wr-good" : champWr < 45 ? "lg-wr-bad" : ""}`}>
-                {champWr.toFixed(0)}%
-              </span>
-              <span className="lg-champ-detail">{p.champ_games}G {p.champ_kda.toFixed(1)} KDA</span>
-            </div>
-          ) : (
-            <div className="lg-champ-stats">
-              <span className="lg-champ-detail lg-first-time">1st time</span>
-            </div>
-          )}
-          {p.streak !== 0 && (
-            <span className={`lg-streak ${p.streak > 0 ? "lg-streak-win" : "lg-streak-loss"}`}>
-              {p.streak > 0 ? `${p.streak}W` : `${Math.abs(p.streak)}L`}
-            </span>
-          )}
+          <div className="lg-metric">
+            <strong className={champWr >= 55 ? "lg-wr-good" : champWr < 45 && p.champ_games > 0 ? "lg-wr-bad" : ""}>{p.champ_games > 0 ? `${champWr.toFixed(0)}%` : "—"}</strong>
+            <span>{p.champ_games} champ games</span>
+          </div>
+          <div className="lg-metric lg-metric-role">
+            <PositionIcon pos={p.position} size={15} />
+            <span>{POSITION_LABELS[p.position] || p.position || "Unknown role"}</span>
+          </div>
+          <div className="lg-metric">
+            <strong className={p.ranked_win_rate >= 0.52 ? "lg-wr-good" : p.ranked_win_rate < 0.48 && totalGames > 0 ? "lg-wr-bad" : ""}>{totalGames > 0 ? `${(p.ranked_win_rate * 100).toFixed(0)}%` : "—"}</strong>
+            <span>{totalGames} ranked games</span>
+          </div>
         </div>
       )}
     </div>
@@ -4633,6 +5276,7 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
   const localPlayer = game.allies.find(p => p.live != null) ?? game.allies[0];
   const localLive = localPlayer?.live;
   const build = game.recommended_build;
+  const localChampionInfo = useChampionName(localPlayer?.champion_id ?? null);
 
   // Build the full recommended sequence for local player
   const buildSlots = localLive ? computeBuildSequence(build, localLive.items, localLive.current_gold) : [];
@@ -4713,19 +5357,6 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
 
       {ld && <LaneMatchups allies={game.allies} enemies={game.enemies} />}
 
-      {buildSlots.length > 0 && (
-        <BuildSequencePanel
-          slots={buildSlots}
-          nextSlot={nextSlot}
-          currentGold={localLive?.current_gold ?? 0}
-          threat={threatSuggestion}
-          antiShield={shieldAdvice}
-          penetration={penAdvice}
-          alternatives={game.recommended_alternatives?.core_items ?? []}
-          currentCoreIds={build?.core_items ?? []}
-        />
-      )}
-
       {alerts.length > 0 && (
         <div className="lg-alerts">
           {alerts.map(a => (
@@ -4736,24 +5367,54 @@ function LiveGameView({ game, onViewPlayer }: { game: LiveGameState; onViewPlaye
         </div>
       )}
 
-      <div className="lg-teams">
-        <div className="lg-team">
-          <h4 className="draft-team-label" style={{ color: "var(--accent-blue)" }}>Your Team</h4>
-          <div className="lg-players">
-            {sortByPosition(game.allies).map((p, i) => (
-              <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
-            ))}
-          </div>
+      <div className="lg-dashboard">
+        <div className="lg-roster-board">
+          <section className="lg-team lg-team-ally">
+            <div className="lg-team-header">
+              <strong>Your Team</strong>
+              <span>Champion form and ranked profile</span>
+            </div>
+            <div className="lg-team-grid">
+              {sortByPosition(game.allies).map((p, i) => (
+                <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
+              ))}
+            </div>
+          </section>
+          <section className="lg-team lg-team-enemy">
+            <div className="lg-team-header">
+              <strong>Enemy Team</strong>
+              <span>Click summoner spells to start cooldown timers</span>
+            </div>
+            <div className="lg-team-grid">
+              {sortByPosition(game.enemies).map((p, i) => (
+                <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} isEnemy spellCd={spellCd} />
+              ))}
+            </div>
+          </section>
         </div>
-        <div className="lg-vs">VS</div>
-        <div className="lg-team">
-          <h4 className="draft-team-label" style={{ color: "var(--accent-red)" }}>Enemy Team</h4>
-          <div className="lg-players">
-            {sortByPosition(game.enemies).map((p, i) => (
-              <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} isEnemy spellCd={spellCd} />
-            ))}
-          </div>
-        </div>
+        {buildSlots.length > 0 && (
+          <aside className="lg-build-sidebar">
+            <div className="lg-build-owner">
+              <ChampionIcon championId={localPlayer?.champion_id ?? 0} size={34} />
+              <div>
+                <strong>{localChampionInfo?.name || "Your champion"}</strong>
+                <span>{POSITION_LABELS[localPlayer?.position || ""] || localPlayer?.position || "Recommended build"}</span>
+              </div>
+            </div>
+            <BuildSequencePanel
+              slots={buildSlots}
+              nextSlot={nextSlot}
+              currentGold={localLive?.current_gold ?? 0}
+              threat={threatSuggestion}
+              antiShield={shieldAdvice}
+              penetration={penAdvice}
+              alternatives={game.recommended_alternatives?.core_items ?? []}
+              currentCoreIds={build?.core_items ?? []}
+              starterItems={build?.starter_items ?? []}
+              skillOrder={build?.skill_order ?? []}
+            />
+          </aside>
+        )}
       </div>
 
       {ld && <ObjectiveTimers events={ld.events} gameTime={ld.game_time} />}
@@ -4826,6 +5487,7 @@ function ChampionStatsBar({ history, filter, onFilter }: {
   // Group by champion
   const stats: Record<number, { games: number; wins: number; kills: number; deaths: number; assists: number }> = {};
   for (const m of history) {
+    if (isCustomMatch(m)) continue;
     if (!stats[m.champion_id]) {
       stats[m.champion_id] = { games: 0, wins: 0, kills: 0, deaths: 0, assists: 0 };
     }

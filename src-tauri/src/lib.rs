@@ -117,6 +117,7 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                     let mut s = state.lock().await;
                     s.status = ConnectionStatus::Connected;
                     s.summoner_name = summoner.game_name.or(summoner.display_name);
+                    s.profile_icon_id = summoner.profile_icon_id;
                     s.summoner_id = summoner.summoner_id;
                     let new_puuid = summoner.puuid.filter(|p| !p.is_empty());
                     // Hydrate lp_history from the right bucket on first
@@ -1092,6 +1093,14 @@ async fn view_match_details(
     Ok(())
 }
 
+/// Returns past match details without changing the app's current screen.
+/// The lobby uses this for the expandable ten player performance table.
+#[tauri::command]
+async fn get_match_details_preview(game_id: i64) -> Result<models::PostGameStats, String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    lcu::get_match_details(&creds, game_id).await
+}
+
 #[tauri::command]
 async fn swap_aram_bench(champion_id: i64) -> Result<(), String> {
     let creds = lcu::read_lockfile().ok_or("League client not found")?;
@@ -1450,6 +1459,7 @@ pub fn run() {
             ban_champion,
             view_player_profile,
             view_match_details,
+            get_match_details_preview,
             back_to_lobby,
             swap_aram_bench,
             set_overlay_position,

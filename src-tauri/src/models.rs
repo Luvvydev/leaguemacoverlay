@@ -65,6 +65,7 @@ pub struct PickRecommendation {
 pub struct AppState {
     pub status: ConnectionStatus,
     pub summoner_name: Option<String>,
+    pub profile_icon_id: Option<i64>,
     #[serde(skip)]
     pub summoner_id: Option<i64>,
     #[serde(skip)]
@@ -196,6 +197,7 @@ impl Default for AppState {
         Self {
             status: ConnectionStatus::Disconnected,
             summoner_name: None,
+            profile_icon_id: None,
             summoner_id: None,
             summoner_puuid: None,
             champion_id: None,
@@ -557,6 +559,8 @@ pub struct LcuRunePage {
 pub struct LcuSummoner {
     pub display_name: Option<String>,
     pub game_name: Option<String>,
+    #[serde(default)]
+    pub profile_icon_id: Option<i64>,
     #[allow(dead_code)]
     pub summoner_id: Option<i64>,
     #[serde(default)]
@@ -612,6 +616,8 @@ pub struct MatchHistoryEntry {
     pub vision_score: i64,
     pub gold_earned: i64,
     pub total_damage: i64,
+    #[serde(default)]
+    pub items: Vec<i64>,
     #[serde(default)]
     pub position: String, // TOP / JUNGLE / MIDDLE / BOTTOM / UTILITY (empty if unknown)
     #[serde(default)]

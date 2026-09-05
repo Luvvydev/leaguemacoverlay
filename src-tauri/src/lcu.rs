@@ -1095,6 +1095,9 @@ pub async fn get_player_match_history(creds: &LcuCredentials, puuid: &str) -> Re
                         vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
+                        items: (0..6).filter_map(|i| {
+                            stats.get(&format!("item{}", i)).and_then(|v| v.as_i64()).filter(|&id| id > 0)
+                        }).collect(),
                         position: derive_position_from_history(me, stats, duration),
                         team_id: me.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
                     });
@@ -1157,6 +1160,9 @@ pub async fn get_match_history(creds: &LcuCredentials) -> Result<Vec<MatchHistor
                         vision_score: stats.get("visionScore").and_then(|v| v.as_i64()).unwrap_or(0),
                         gold_earned: stats.get("goldEarned").and_then(|v| v.as_i64()).unwrap_or(0),
                         total_damage: stats.get("totalDamageDealtToChampions").and_then(|v| v.as_i64()).unwrap_or(0),
+                        items: (0..6).filter_map(|i| {
+                            stats.get(&format!("item{}", i)).and_then(|v| v.as_i64()).filter(|&id| id > 0)
+                        }).collect(),
                         position: derive_position_from_history(me, stats, duration),
                         team_id: me.get("teamId").and_then(|v| v.as_i64()).unwrap_or(0),
                     });

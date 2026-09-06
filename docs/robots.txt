@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://ishtartec.github.io/query-lol-desktop/sitemap.xml
+Sitemap: https://luvvydev.github.io/leaguemacoverlay/sitemap.xml

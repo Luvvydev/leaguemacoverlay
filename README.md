@@ -1,15 +1,47 @@
 # LuvvyLoL
 
-LuvvyLoL is a League of Legends desktop companion built with macOS in mind. It connects to the running League client and keeps champion select, live game information, builds, and match history in one place.
+LuvvyLoL is a League of Legends companion built for macOS. Its main feature is a working in-game overlay that appears over League while you hold Tab, giving you useful live information without leaving the match.
 
-## What it does
+It connects directly to the running League client and brings champion select, builds, live match tools, and match history together in one app.
 
-- Recommends champions based on the enemy team and your recent picks
-- Shows runes, summoner spells, skill order, starting items, boots, and full item paths
-- Can automatically apply runes, spells, and item sets, including Swiftplay loadouts
-- Shows both teams during a match with ranks, recent form, builds, lane gold differences, and useful player labels
-- Provides an in-game Tab overlay with live CS per minute and build information
-- Tracks recent matches, champion performance, win rate, KDA, playstyle labels, and post-game rankings
+## Working in-game Tab overlay
+
+Hold Tab during a match to see:
+
+* Your live CS per minute and total CS
+* Team kills, game time, estimated win chance, and the current team gold difference
+* Estimated gold and level differences for every lane matchup
+* Your recommended item path, including items you already own
+* The next item to buy, its purchase progress, and exactly how much more gold you need
+* A clear recall indicator when your next item is affordable
+* Situational item suggestions based on enemy damage, shielding, resistances, and other threats
+* Penetration recommendations showing the estimated damage improvement
+* Upcoming Dragon, Baron, Herald, and Void Grub timers
+* Enemy death timers and missing-enemy warnings
+* Wave advice such as when to push, freeze, roam, or farm safely
+* Enemy jungler tracking and likely activity
+* Vision reminders based on your role and current vision score
+* Current matchup advice, upcoming level spikes, and the next few levels of your game plan
+
+The overlay works in Draft, Ranked Solo/Duo, Ranked Flex, and Swiftplay.
+
+## Champion select and builds
+
+* Recommends champions based on the enemy team and your recent picks
+* Shows runes, summoner spells, skill order, starting items, boots, and complete item paths
+* Automatically applies supported runes, spells, and item sets
+* Supports Swiftplay loadouts
+* Shows both teams with ranks, recent form, builds, lane matchups, and useful player labels
+
+## Profiles and match history
+
+* Tracks recent matches, win rate, KDA, CS per minute, and champion performance
+* Gives you personalized playstyle labels based on how you play
+* Separates Swiftplay, Ranked, Normal, and ARAM matches
+* Excludes custom games from your main win and loss record
+* Expands completed games into full team-by-team performance rankings
+* Awards labels such as MVP, CS GOD, HIGH KDA, DAMAGE CARRY, VISIONARY, and UNLUCKY
+
 
 ## Screenshots
 
@@ -60,6 +92,18 @@ Expanding a match ranks all ten players and adds labels such as MVP, CS GOD, DAM
 <p align="center">
   <img src="6.png" alt="report">
 </p>
+
+## In Game Tab Overlay
+
+The main feature is a working macOS overlay that appears over League while you hold Tab.
+
+It shows your live CS per minute, estimated win chance, team and lane gold differences, recommended item path, next purchase, gold needed to recall, situational item suggestions, objective timers, enemy death timers, vision reminders, jungle tracking, wave strategy, and upcoming level power spikes.
+
+<p align="center">
+  <img src="7.png" alt="LuvvyLoL in game Tab overlay">
+</p>
+
+
 
 ## Installation
 

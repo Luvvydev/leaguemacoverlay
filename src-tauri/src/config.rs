@@ -24,6 +24,10 @@ pub struct UserConfig {
     pub tts_enabled: bool,
     #[serde(default = "default_overlay_position")]
     pub overlay_position: String,
+    #[serde(default = "default_ui_scale")]
+    pub ui_scale: f64,
+    #[serde(default = "default_flash_key")]
+    pub flash_key: String,
 
     #[serde(default)]
     pub accounts: HashMap<String, AccountState>,
@@ -43,11 +47,20 @@ pub struct AccountState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LpEntry {
+    #[serde(default)]
+    pub queue_type: String,
+    #[serde(default)]
+    pub wins: Option<i64>,
+    #[serde(default)]
+    pub losses: Option<i64>,
     pub timestamp: i64,
     pub lp: i64,
     pub tier: String,
     pub rank: String,
 }
+
+pub fn default_ui_scale() -> f64 { 1.15 }
+pub fn default_flash_key() -> String { "F".to_string() }
 
 fn default_region() -> String { "euw".to_string() }
 fn default_true() -> bool { true }

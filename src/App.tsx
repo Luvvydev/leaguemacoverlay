@@ -4,6 +4,7 @@ import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
 import "./App.css";
+import { rankValue, dailySoloLp, historyLabels, availablePaths, choosePath, componentCredit, type BuildPath } from "./recommendationLogic";
 
 // --- Types ---
 
@@ -211,6 +212,7 @@ interface LiveGamePlayer {
   champ_games: number;
   champ_wins: number;
   champ_kda: number;
+  recent_matches?: MatchHistoryEntry[];
   premade_group: number | null;
   live: LivePlayerStats | null;
 }
@@ -230,6 +232,9 @@ interface ComfortPick {
 }
 
 interface LpEntry {
+  queue_type?: string;
+  wins?: number | null;
+  losses?: number | null;
   timestamp: number;
   lp: number;
   tier: string;
@@ -316,6 +321,9 @@ interface AppState {
   tts_enabled: boolean;
   region: string;
   overlay_position: string;
+  ui_scale: number;
+  flash_key: string;
+  build_path: string;
 }
 
 // --- Constants ---
@@ -1575,7 +1583,7 @@ const SHARD_ICON_BASE = "https://raw.communitydragon.org/latest/plugins/rcp-be-l
 // --- Data Dragon cache ---
 
 interface RuneData { id: number; name: string; icon: string; shortDesc: string; }
-interface ItemData { name: string; description: string; plaintext: string; gold: number; stats: ItemStats; }
+interface ItemData { from: number[]; into: number[]; purchasable: boolean; name: string; description: string; plaintext: string; gold: number; stats: ItemStats; }
 
 interface ChampBase { armor: number; armorPerLevel: number; spellblock: number; spellblockPerLevel: number; }
 let championCache: Record<string, { key: string; name: string; base: ChampBase }> | null = null;
@@ -1633,6 +1641,8 @@ async function loadItemData() {
     for (const [id, item] of Object.entries(json.data) as any[]) {
       byId[id] = {
         name: item.name, description: item.description || "", plaintext: item.plaintext || "",
+        from: (item.from || []).map(Number), into: (item.into || []).map(Number),
+        purchasable: item.gold?.purchasable !== false && item.maps?.["11"] !== false && !item.requiredAlly && !item.requiredChampion,
         gold: item.gold?.total || 0, stats: parseItemStats(item.description || ""),
       };
     }
@@ -1669,7 +1679,7 @@ function computeBuildSequence(
   if (!build) return [];
   const slots: { id: number; category: BuildSlotCategory }[] = [];
   if (build.boots[0]) slots.push({ id: build.boots[0], category: "boots" });
-  for (const id of build.core_items.slice(0, 4)) {
+  for (const id of build.core_items.slice(0, 5)) {
     slots.push({ id, category: "core" });
   }
   const owned = new Set(ownedItems);
@@ -1689,9 +1699,10 @@ function computeBuildSequence(
     }
     const out: BuildSlot = { id: s.id, name, goldCost, state, category: s.category };
     if (state === "next" && goldCost > 0) {
-      const need = Math.max(0, goldCost - currentGold);
+      const credit = componentCredit(s.id, ownedItems, getItemData);
+      const need = Math.max(0, goldCost - credit - currentGold);
       out.goldNeeded = Math.ceil(need);
-      out.progressPct = Math.min(100, Math.round((currentGold / goldCost) * 100));
+      out.progressPct = Math.min(100, Math.round(((currentGold + credit) / goldCost) * 100));
     }
     return out;
   });
@@ -1819,9 +1830,10 @@ function suggestPenetration(
   myItems: number[],
   enemies: LiveGamePlayer[],
   gameTime: number,
+  buildStyle?: BuildPath["style"],
 ): PenetrationAdvice | null {
   if (gameTime < 10 * 60) return null;
-  const damageType: "ap" | "ad" = CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? "ap" : "ad";
+  const damageType: "ap" | "ad" = buildStyle === "AP" ? "ap" : buildStyle === "AD" ? "ad" : CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? "ap" : "ad";
   const kind = damageType === "ap" ? "mr" : "armor";
 
   const measured = enemies.map(e => enemyResist(e, kind)).filter((r): r is [number, number] => r != null);
@@ -1911,6 +1923,7 @@ function suggestThreatResponse(
   myPosition: string,
   myChampionId: number,
   gameTime: number,
+  buildStyle?: BuildPath["style"],
 ): ThreatSuggestion | null {
   if (gameTime < 8 * 60) return null;
   const enemiesWithLive = enemies.filter(e => e.live != null);
@@ -1985,7 +1998,7 @@ function suggestThreatResponse(
     // Floor: healing has to be a real part of what is killing you, not just
     // present on the enemy roster.
     if (healThreat >= 0.25) {
-      const myIsAp = CHAMP_DAMAGE_TYPE[myChampionId] === "ap";
+      const myIsAp = (buildStyle === "AP" || (buildStyle !== "AD" && CHAMP_DAMAGE_TYPE[myChampionId] === "ap"));
       const isSup = isSupportRole(myPosition);
       const pick = isSup ? THREAT_ITEMS.antiheal_sup : (myIsAp ? THREAT_ITEMS.antiheal_ap : THREAT_ITEMS.antiheal_ad);
       const names = healers.slice(0, 2).map(e => championCache?.[e.champion_id.toString()]?.name || "?").join(", ");
@@ -2001,7 +2014,7 @@ function suggestThreatResponse(
     && !OWNED_COVERAGE["mr-bruiser"].some(id => owned.has(id))) {
     let pick;
     if (isCarryRole(myPosition)) {
-      pick = CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? THREAT_ITEMS.mr_squishy_ap : THREAT_ITEMS.mr_squishy_ad;
+      pick = (buildStyle === "AP" || (buildStyle !== "AD" && CHAMP_DAMAGE_TYPE[myChampionId] === "ap")) ? THREAT_ITEMS.mr_squishy_ap : THREAT_ITEMS.mr_squishy_ad;
     } else if (isBruiserRole(myPosition)) {
       pick = THREAT_ITEMS.mr_bruiser;
     } else {
@@ -2024,7 +2037,7 @@ function suggestThreatResponse(
     && !OWNED_COVERAGE["armor-bruiser"].some(id => owned.has(id))) {
     let pick;
     if (isCarryRole(myPosition)) {
-      pick = CHAMP_DAMAGE_TYPE[myChampionId] === "ap" ? THREAT_ITEMS.armor_squishy : THREAT_ITEMS.armor_squishy_ad;
+      pick = (buildStyle === "AP" || (buildStyle !== "AD" && CHAMP_DAMAGE_TYPE[myChampionId] === "ap")) ? THREAT_ITEMS.armor_squishy : THREAT_ITEMS.armor_squishy_ad;
     } else if (isBruiserRole(myPosition)) {
       pick = THREAT_ITEMS.armor_bruiser;
     } else {
@@ -2258,7 +2271,7 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
       <h3 className="card-label">Skill Priority</h3>
       <div className="skills-row">
         {priority.map((slot, i) => (
-          <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: i === 0 ? 14 : 12 }, "skill-pip")}</span>
+          <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: `calc(${i === 0 ? 14 : 13}px * var(--ui-scale))` }, "skill-pip")}</span>
         ))}
       </div>
       {levels.length > 0 && (
@@ -2271,7 +2284,7 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
               <div key={i} className="skill-lvl">
                 <span className="skill-lvl-num">{i + 1}</span>
                 <div className="skill-lvl-pip">
-                  {pip(slot, { fontSize: 10 }, "skill-pip-sm", evolve)}
+                  {pip(slot, { fontSize: "calc(13px * var(--ui-scale))" }, "skill-pip-sm", evolve)}
                   {evolve && <span className="skill-evolve">{evolve}</span>}
                 </div>
               </div>
@@ -2474,6 +2487,58 @@ function ChampionIcon({ championId, size = 36, className = "" }: { championId: n
   );
 }
 
+function useReadability(scale: number) {
+  useEffect(() => {
+    document.documentElement.style.setProperty("--ui-scale", String(Math.max(1, Math.min(1.5, scale || 1.15))));
+  }, [scale]);
+}
+
+function useItemMetadata() {
+  const [, refresh] = useState(0);
+  useEffect(() => { let active = true; loadItemData().then(() => { if (active) refresh(n => n + 1); }); return () => { active = false; }; }, []);
+}
+
+function resolveBuildPath(game: LiveGameState, player: LiveGamePlayer | null | undefined, selection: string) {
+  const original = game.recommended_build;
+  if (!original || !player) return { paths: [] as BuildPath[], active: undefined, build: original };
+  const paths = availablePaths(player.champion_id, original.core_items, original.boots,
+    game.recommended_alternatives?.core_items.map(o => o.ids) || [], getItemData);
+  const owned = player.live?.items || [];
+  const active = choosePath(paths, selection, owned, getItemData);
+  if (!active) return { paths, active, build: original };
+  // Keep completed purchases visible and count them toward the inventory limit.
+  const finished = owned.filter(id => {
+    const data = getItemData(id);
+    return data && data.gold >= 2200 && !data.into.length && !active.boots.includes(id);
+  });
+  const ownedBoots = owned.find(id => [3006,3047,3111,3020,3158,3009,3117].includes(id));
+  const boots = ownedBoots ? [ownedBoots] : active.boots;
+  const core = [...new Set([...finished, ...active.core])].filter(id => !boots.includes(id)).slice(0, 5);
+  return { paths, active, build: { ...original, core_items: core, boots } };
+}
+
+function BuildPathPicker({ paths, active, selection, overlay = false }: {
+  paths: BuildPath[]; active?: BuildPath; selection: string; overlay?: boolean;
+}) {
+  const [error, setError] = useState("");
+  if (!paths.length) return null;
+  function choose(path: string) {
+    setError("");
+    invoke("set_build_path", { path }).catch(e => setError(String(e)));
+  }
+  return <div className="build-path-picker">
+    <div className="build-path-heading"><strong>Build: {active?.label || "Recommended"}</strong>
+      <span>{selection === "auto" ? "Adapts to completed purchases" : "Locked for this game"}</span></div>
+    {overlay && <p className="build-path-help">Hold Shift + TAB to click or scroll</p>}
+    <details><summary>Change build style</summary><div className="build-path-options">
+      <button aria-pressed={selection === "auto"} onClick={() => choose("auto")}>Auto adapt</button>
+      {paths.map(p => <button key={p.id} aria-pressed={selection === p.id} onClick={() => choose(p.id)}>{p.label}</button>)}
+    </div></details>
+    {active && active.id.startsWith("varus-") && <small>Curated item path. Keep situational advice in mind.</small>}
+    {error && <p role="alert">{error}</p>}
+  </div>;
+}
+
 function App() {
   const [state, setState] = useState<AppState>({
     status: "disconnected", summoner_name: null, profile_icon_id: null, champion_id: null, champion_locked: false,
@@ -2483,7 +2548,7 @@ function App() {
     match_history: [], live_game: null, post_game: null,
     game_mode: "classic", aram_bench: [], recommendations: [], ban_phase_active: false,
     auto_apply: true, auto_lock: false, auto_accept: false, tts_enabled: false, region: "euw",
-    overlay_position: "top-right",
+    overlay_position: "top-right", ui_scale: 1.15, flash_key: "F", build_path: "auto",
   });
   const [runesLoaded, setRunesLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2492,6 +2557,9 @@ function App() {
   const errorTimeout = useRef<number | null>(null);
 
   const championInfo = useChampionName(state.champion_id);
+  useReadability(state.ui_scale);
+  useItemMetadata();
+  useEffect(() => { setPlayerProfile(null); }, [state.summoner_name, state.status === "disconnected"]);
 
   useEffect(() => {
     invoke<AppState>("get_state").then(setState);
@@ -2561,6 +2629,14 @@ function App() {
         </div>
       </header>
 
+      <div className="display-preferences">
+        <label>Text size <select value={state.ui_scale} onChange={e => invoke("set_display_preferences", { uiScale: Number(e.target.value), flashKey: state.flash_key }).catch(e => showError(String(e)))}>
+          <option value={1}>Standard</option><option value={1.15}>Large</option><option value={1.3}>Larger</option><option value={1.5}>Largest</option>
+        </select></label>
+        <label>Flash key <select value={state.flash_key} onChange={e => invoke("set_display_preferences", { uiScale: state.ui_scale, flashKey: e.target.value }).catch(e => showError(String(e)))}>
+          <option value="F">F</option><option value="D">D</option>
+        </select></label>
+      </div>
       {/* Disconnected - waiting for LoL client */}
       {!isConnected && (
         <section className="section-connect">
@@ -2688,7 +2764,7 @@ function App() {
 
       {/* Live Game */}
       {inGame && state.live_game && (
-        <LiveGameView game={state.live_game} summonerName={state.summoner_name} onViewPlayer={viewPlayer} />
+        <LiveGameView buildPath={state.build_path} game={state.live_game} summonerName={state.summoner_name} onViewPlayer={viewPlayer} />
       )}
 
       {/* Champ select */}
@@ -3267,15 +3343,8 @@ function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lp
     }
   }
 
-  // LP net today
-  const todaysLp = lpHistory.filter(e => e.timestamp >= todayStart);
-  let lpNet: number | null = null;
-  if (todaysLp.length >= 2) {
-    const sortedLp = [...todaysLp].sort((a, b) => a.timestamp - b.timestamp);
-    const last = sortedLp[sortedLp.length - 1];
-    const first = sortedLp[0];
-    lpNet = absoluteLp(last.tier, last.rank, last.lp) - absoluteLp(first.tier, first.rank, first.lp);
-  }
+  // Only compare validated Solo/Duo samples covering the recorded ranked games.
+  const lpNet = dailySoloLp(lpHistory, today, todayStart);
 
   // Game time threshold colors: > 3h yellow, > 5h red
   const timeWarn = totalSecs > 5 * 3600 ? "danger" : totalSecs > 3 * 3600 ? "warn" : "";
@@ -3308,12 +3377,13 @@ function DailySummary({ history, lpHistory }: { history: MatchHistoryEntry[]; lp
             <span className="daily-stat-label">Streak</span>
           </div>
         )}
+        {lpNet === null && <div className="daily-stat" title="Reliable Solo/Duo samples covering today are not available. Flex and other queues are excluded."><span className="daily-stat-value">Unavailable</span><span className="daily-stat-label">Solo/Duo LP</span></div>}
         {lpNet !== null && (
           <div className="daily-stat">
             <span className={`daily-stat-value ${lpNet > 0 ? "lg-wr-good" : lpNet < 0 ? "lg-wr-bad" : ""}`}>
               {lpNet > 0 ? "+" : ""}{lpNet}
             </span>
-            <span className="daily-stat-label">LP</span>
+            <span className="daily-stat-label">Solo/Duo LP</span>
           </div>
         )}
         {bestKda && (
@@ -3708,18 +3778,12 @@ function ImprovementPanel({ history, ranked }: { history: MatchHistoryEntry[]; r
 
 // Convert tier + rank + LP to absolute LP value for charting
 function absoluteLp(tier: string, rank: string, lp: number): number {
-  const tiers: Record<string, number> = {
-    IRON: 0, BRONZE: 400, SILVER: 800, GOLD: 1200,
-    PLATINUM: 1600, EMERALD: 2000, DIAMOND: 2400,
-    MASTER: 2800, GRANDMASTER: 3200, CHALLENGER: 3600,
-  };
-  const divisions: Record<string, number> = { IV: 0, III: 100, II: 200, I: 300 };
-  const t = tiers[tier.toUpperCase()] ?? 1200;
-  const d = divisions[rank.toUpperCase()] ?? 0;
-  return t + d + lp;
+  return rankValue(tier, rank, lp);
 }
 
 function LpChart({ history }: { history: LpEntry[] }) {
+  history = history.filter(h => h.queue_type === "RANKED_SOLO_5x5" && Number.isFinite(absoluteLp(h.tier, h.rank, h.lp)));
+  if (history.length < 2) return null;
   const width = 400;
   const height = 48;
   const pad = { top: 6, bottom: 14, left: 8, right: 8 };
@@ -3937,7 +4001,7 @@ function buildProfileLabels(history: MatchHistoryEntry[]): ProfileLabel[] {
     });
   }
 
-  return labels.slice(0, 6);
+  return [...historyLabels(history), ...labels].filter((badge, index, all) => all.findIndex(b => b.label === badge.label) === index);
 }
 
 function ProfileLabelChip({ badge }: { badge: ProfileLabel }) {
@@ -4969,14 +5033,14 @@ function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string; title:
   const labels: { text: string; cls: string; title: string }[] = [];
   const rankedGames = p.ranked_wins + p.ranked_losses;
   const championWinRate = p.champ_games > 0 ? p.champ_wins / p.champ_games : 0;
-  if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions <= 3) labels.push({
+  if (p.smurf && p.smurf.games_played >= 10 && p.smurf.unique_champions === 1) labels.push({
     text: "OTP",
     cls: "label-otp",
     title: `${p.smurf.unique_champions} champions across ${p.smurf.games_played} recent games.`,
   });
-  if (p.champ_games === 0) labels.push({ text: "FIRST TIME", cls: "label-autofill", title: "No recent games found on this champion." });
+  if ((p.recent_matches?.length ?? 0) >= 5 && p.champ_games === 0) labels.push({ text: "NO RECENT PICK", cls: "label-autofill", title: "No recent games found on this champion." });
   if (p.streak >= 3) labels.push({ text: `${p.streak}W STREAK`, cls: "label-winstreak", title: `${p.streak} consecutive wins in recent games.` });
-  else if (p.streak <= -4) labels.push({ text: "TILTED", cls: "label-tilted", title: `${Math.abs(p.streak)} consecutive losses in recent games.` });
+  else if (p.streak <= -4) labels.push({ text: "LOSS STREAK", cls: "label-tilted", title: `${Math.abs(p.streak)} consecutive losses in recent games.` });
   else if (p.streak <= -3) labels.push({ text: `${Math.abs(p.streak)}L STREAK`, cls: "label-lossstreak", title: `${Math.abs(p.streak)} consecutive losses in recent games.` });
   if (rankedGames >= 20 && p.ranked_win_rate >= 0.58) labels.push({
     text: "HIGH WINRATE",
@@ -5004,7 +5068,7 @@ function getPlayerLabels(p: LiveGamePlayer): { text: string; cls: string; title:
     title: `${p.champ_kda.toFixed(1)} average KDA over ${p.champ_games} games on this champion.`,
   });
   if (rankedGames >= 300) labels.push({ text: "VETERAN", cls: "label-veteran", title: `${rankedGames} ranked games recorded.` });
-  return labels.slice(0, 5);
+  return [...historyLabels(p.recent_matches || []).map(b => ({ text: b.label, cls: `profile-label-${b.tone}`, title: b.description })), ...labels];
 }
 
 interface SpellCdProps {
@@ -5247,7 +5311,7 @@ function useAlertManager(
   }), [setAlerts]);
 }
 
-function LiveGameView({ game, summonerName, onViewPlayer }: { game: LiveGameState; summonerName: string | null; onViewPlayer?: (puuid: string) => void }) {
+function LiveGameView({ game, summonerName, onViewPlayer, buildPath }: { buildPath: string; game: LiveGameState; summonerName: string | null; onViewPlayer?: (puuid: string) => void }) {
   const ld = game.live_data;
   // Calculate total gold from players (unspent + items) instead of backend values
   const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
@@ -5285,7 +5349,8 @@ function LiveGameView({ game, summonerName, onViewPlayer }: { game: LiveGameStat
       })
     : undefined;
   const localLive = localPlayer?.live;
-  const build = game.recommended_build;
+  const pathState = resolveBuildPath(game, localPlayer, buildPath);
+  const build = pathState.build;
   const localChampionInfo = useChampionName(localPlayer?.champion_id ?? null);
 
   // Build the full recommended sequence for local player
@@ -5294,17 +5359,17 @@ function LiveGameView({ game, summonerName, onViewPlayer }: { game: LiveGameStat
 
   // Threat-response suggestion (situational defensive item)
   const threatSuggestion = (localLive && localPlayer && ld)
-    ? suggestThreatResponse(game.enemies, localLive.items, localPlayer.position || "", localPlayer.champion_id, ld.game_time)
+    ? suggestThreatResponse(game.enemies, localLive.items, localPlayer.position || "", localPlayer.champion_id, ld.game_time, pathState.active?.style)
     : null;
 
   // Penetration advice from the enemy's actual resistances
   const penAdvice = (localLive && localPlayer && ld)
-    ? suggestPenetration(localPlayer.champion_id, localLive.items, game.enemies, ld.game_time)
+    ? suggestPenetration(localPlayer.champion_id, localLive.items, game.enemies, ld.game_time, pathState.active?.style)
     : null;
 
   // Anti-shield: orthogonal to the threat response, so it gets its own slot
   const shieldAdvice = (localLive && localPlayer && ld)
-    ? suggestAntiShield(game.enemies, localLive.items, localPlayer.position || "", ld.game_time)
+    ? pathState.active?.style === "AP" ? null : suggestAntiShield(game.enemies, localLive.items, localPlayer.position || "", ld.game_time)
     : null;
 
   // Detect enemy item completions
@@ -5377,6 +5442,7 @@ function LiveGameView({ game, summonerName, onViewPlayer }: { game: LiveGameStat
         </div>
       )}
 
+      <BuildPathPicker paths={pathState.paths} active={pathState.active} selection={buildPath} />
       <div className="lg-dashboard">
         <div className="lg-roster-board">
           <section className="lg-team lg-team-ally">
@@ -6324,6 +6390,8 @@ function RuneDisplay({ runes }: { runes: RuneBuild }) {
 
 function OverlayApp() {
   const [state, setState] = useState<AppState | null>(null);
+  useReadability(state?.ui_scale ?? 1.15);
+  useItemMetadata();
 
   useEffect(() => {
     // Poll state every second (more reliable than event listener for overlay)
@@ -6487,13 +6555,14 @@ function OverlayApp() {
       const n = a.summoner_name.toLowerCase();
       return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
     });
-    if (!me?.live || !game.recommended_build) return;
+    const activeBuild = resolveBuildPath(game, me, state.build_path).build;
+    if (!me?.live || !activeBuild) return;
     const owned = new Set(me.live.items);
-    const targets = [...game.recommended_build.boots.slice(0, 1), ...game.recommended_build.core_items].filter(id => !owned.has(id));
+    const targets = [...activeBuild.boots.slice(0, 1), ...activeBuild.core_items].filter(id => !owned.has(id));
     for (const id of targets) {
       const item = getItemData(id);
       if (item && item.gold > 0 && item.gold < 4500) {
-        const need = item.gold - me.live.current_gold;
+        const need = item.gold - componentCredit(id, me.live.items, getItemData) - me.live.current_gold;
         if (need <= 0) {
           const gameTime = ld.game_time;
           if (gameTime - recallTtsCd.current >= 90) {
@@ -6592,7 +6661,7 @@ function OverlayApp() {
         <span className="ov-cspm-label">CS / MIN</span>
         <span className="ov-cspm-total">0 CS</span>
       </div>
-      <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Waiting for game data...</span>
+      <span style={{ color: "var(--text-muted)", fontSize: "calc(14px * var(--ui-scale))" }}>Waiting for game data...</span>
     </div>
   );
   const game = state.live_game;
@@ -6670,15 +6739,18 @@ function OverlayApp() {
     ? myPlan.slice(currentLevel).find(e => (e.isSpike || e.isEnemySpike) && e.level - currentLevel <= 4)
     : null;
 
+  const pathState = resolveBuildPath(game, me, state.build_path);
+  const activeBuild = pathState.build;
+
   // --- Recall optimizer (computed values, no hooks) ---
   const recall: { item: string; gold: number; affordable: boolean } | null = (() => {
-    if (!me?.live || !game.recommended_build) return null;
+    if (!me?.live || !activeBuild) return null;
     const owned = new Set(me.live.items);
-    const targets = [...game.recommended_build.boots.slice(0, 1), ...game.recommended_build.core_items].filter(id => !owned.has(id));
+    const targets = [...activeBuild.boots.slice(0, 1), ...activeBuild.core_items].filter(id => !owned.has(id));
     for (const id of targets) {
       const item = getItemData(id);
       if (item && item.gold > 0 && item.gold < 4500) {
-        const need = item.gold - me.live.current_gold;
+        const need = item.gold - componentCredit(id, me.live.items, getItemData) - me.live.current_gold;
         return { item: item.name, gold: Math.ceil(need), affordable: need <= 0 };
       }
     }
@@ -6686,11 +6758,11 @@ function OverlayApp() {
   })();
 
   // --- Build sequence strip (overlay) ---
-  const ovBuildSlots = me?.live ? computeBuildSequence(game.recommended_build, me.live.items, me.live.current_gold) : [];
+  const ovBuildSlots = me?.live ? computeBuildSequence(activeBuild, me.live.items, me.live.current_gold) : [];
 
   // --- Threat-response suggestion (overlay) ---
   const ovThreat = (me?.live && ld)
-    ? suggestThreatResponse(game.enemies, me.live.items, me.position || "", me.champion_id, ld.game_time)
+    ? suggestThreatResponse(game.enemies, me.live.items, me.position || "", me.champion_id, ld.game_time, pathState.active?.style)
     : null;
 
   // --- Penetration advice (overlay) ---
@@ -6698,11 +6770,11 @@ function OverlayApp() {
   // the shop open mid-game — so the gain goes in the badge rather than a
   // tooltip: the overlay is click-through, so nothing here can be hovered.
   const ovPen = (me?.live && ld)
-    ? suggestPenetration(me.champion_id, me.live.items, game.enemies, ld.game_time)
+    ? suggestPenetration(me.champion_id, me.live.items, game.enemies, ld.game_time, pathState.active?.style)
     : null;
 
   const ovShield = (me?.live && ld)
-    ? suggestAntiShield(game.enemies, me.live.items, me.position || "", ld.game_time)
+    ? pathState.active?.style === "AP" ? null : suggestAntiShield(game.enemies, me.live.items, me.position || "", ld.game_time)
     : null;
 
   // --- Upcoming objective spawns ---
@@ -6782,6 +6854,12 @@ function OverlayApp() {
         <span className="ov-cspm-total">{me?.live?.cs ?? 0} CS</span>
       </div>
 
+      <BuildPathPicker paths={pathState.paths} active={pathState.active} selection={state.build_path} overlay />
+      <details className="overlay-player-labels"><summary>Player labels</summary>
+        {[...game.allies, ...game.enemies].map(p => <div key={p.puuid || p.summoner_name}>
+          <strong>{p.summoner_name}</strong><div className="profile-label-list">{getPlayerLabels(p).map(b => <span key={b.text} className={`profile-label ${b.cls}`} title={b.title}>{b.text}</span>)}</div>
+        </div>)}
+      </details>
       {/* Lane matchups */}
       <div className="ov-lanes">
         {matchups.map((m, i) => (
@@ -6791,7 +6869,7 @@ function OverlayApp() {
                 <ChampionIcon championId={m.ally.champion_id} size={28} />
                 {m.ally.live && <span className="ov-champ-lvl">{m.ally.live.level}</span>}
               </div>
-              <span className="ov-lane-gold">{Math.round(m.allyGold).toLocaleString()}</span>
+              <div className="ov-player-summary"><strong>{m.ally.summoner_name}</strong><span>{m.ally.rank || "Rank unavailable"}</span><span>{m.ally.live && ld && ld.game_time > 0 ? `${(m.ally.live!.cs / (ld.game_time / 60)).toFixed(1)} CS/min` : "CS unavailable"}</span><span className="ov-lane-gold">{Math.round(m.allyGold).toLocaleString()}g</span><div className="ov-inline-labels">{getPlayerLabels(m.ally).slice(0, 3).map(b => <span key={b.text} className={`profile-label ${b.cls}`} title={b.title}>{b.text}</span>)}</div></div>
             </div>
             <div className="ov-lane-center">
               <span className={`ov-lane-diff ${m.diff > 200 ? "lg-wr-good" : m.diff < -200 ? "lg-wr-bad" : ""}`}>
@@ -6799,7 +6877,7 @@ function OverlayApp() {
               </span>
             </div>
             <div className="ov-lane-player ov-lane-enemy">
-              <span className="ov-lane-gold">{Math.round(m.enemyGold).toLocaleString()}</span>
+              <div className="ov-player-summary"><strong>{m.enemy.summoner_name}</strong><span>{m.enemy.rank || "Rank unavailable"}</span><span>{m.enemy.live && ld && ld.game_time > 0 ? `${(m.enemy.live!.cs / (ld.game_time / 60)).toFixed(1)} CS/min` : "CS unavailable"}</span><span className="ov-lane-gold">{Math.round(m.enemyGold).toLocaleString()}g</span><div className="ov-inline-labels">{getPlayerLabels(m.enemy).slice(0, 3).map(b => <span key={b.text} className={`profile-label ${b.cls}`} title={b.title}>{b.text}</span>)}</div></div>
               <div className="ov-champ">
                 {m.enemy.live && <span className="ov-champ-lvl">{m.enemy.live.level}</span>}
                 <ChampionIcon championId={m.enemy.champion_id} size={28} />

@@ -21,11 +21,62 @@ fn save_config(app: &tauri::AppHandle, s: &models::AppState) {
     cfg.auto_accept = s.auto_accept;
     cfg.tts_enabled = s.tts_enabled;
     cfg.overlay_position = s.overlay_position.clone();
+    cfg.ui_scale = s.ui_scale;
+    cfg.flash_key = s.flash_key.clone();
     if let Some(puuid) = s.summoner_puuid.as_deref() {
         cfg.set_lp_history(puuid, s.lp_history.clone());
     }
     // If puuid isn't known yet (rare: pre-connect save), don't touch lp buckets.
     config::save(app, &cfg);
+}
+
+
+fn ordered_spells(spells: [i64; 2], flash_key: &str) -> [i64; 2] {
+    if (flash_key == "F" && spells[0] == 4) || (flash_key == "D" && spells[1] == 4) {
+        [spells[1], spells[0]]
+    } else { spells }
+}
+
+fn clear_account(s: &mut AppState, app: &tauri::AppHandle) {
+    save_config(app, s);
+    *s = AppState {
+        region: s.region.clone(), auto_apply: s.auto_apply, auto_lock: s.auto_lock,
+        auto_accept: s.auto_accept, tts_enabled: s.tts_enabled,
+        overlay_position: s.overlay_position.clone(), ui_scale: s.ui_scale,
+        flash_key: s.flash_key.clone(), ..AppState::default()
+    };
+}
+
+#[tauri::command]
+async fn set_display_preferences(ui_scale: f64, flash_key: String,
+    state: tauri::State<'_, SharedState>, app_handle: tauri::AppHandle) -> Result<(), String> {
+    if !ui_scale.is_finite() || !(1.0..=1.5).contains(&ui_scale)
+        || !matches!(flash_key.as_str(), "D" | "F") { return Err("Invalid preferences".into()); }
+    let mut s = state.lock().await;
+    s.ui_scale = ui_scale;
+    s.flash_key = flash_key;
+    let key = s.flash_key.clone();
+    if let Some(build) = s.build.as_mut() {
+        build.summoner_spells = build.summoner_spells.map(|spells| ordered_spells(spells, &key));
+    }
+    save_config(&app_handle, &s);
+    let position = s.overlay_position.clone();
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    drop(s);
+    position_overlay_window(&app_handle, &position)?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn set_build_path(path: String, state: tauri::State<'_, SharedState>,
+    app_handle: tauri::AppHandle) -> Result<(), String> {
+    if path.len() > 100 || !path.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("Invalid build path".into());
+    }
+    let mut s = state.lock().await;
+    s.build_path = path;
+    let _ = app_handle.emit("app-state-changed", s.clone());
+    Ok(())
 }
 
 fn notify(title: &str, body: &str) {
@@ -114,6 +165,10 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
         let creds = loop {
             if let Some(creds) = lcu::read_lockfile() {
                 if let Ok(summoner) = lcu::get_current_summoner(&creds).await {
+                    if summoner.puuid.as_deref().unwrap_or("").is_empty() {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        continue;
+                    }
                     let mut s = state.lock().await;
                     s.status = ConnectionStatus::Connected;
                     s.summoner_name = summoner.game_name.or(summoner.display_name);
@@ -147,8 +202,10 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                         let should_record = s.lp_history.last()
                             .map(|last| last.lp != ranked.lp || last.tier != ranked.tier || last.rank != ranked.rank)
                             .unwrap_or(true);
-                        if should_record && ranked.tier != "UNRANKED" {
+                        if (should_record || s.lp_history.last().map(|e| e.queue_type.is_empty()).unwrap_or(true)) && ranked.tier != "UNRANKED" {
                             s.lp_history.push(config::LpEntry {
+                                queue_type: "RANKED_SOLO_5x5".to_string(),
+                                wins: Some(ranked.wins), losses: Some(ranked.losses),
                                 timestamp: std::time::SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)
                                     .unwrap_or_default()
@@ -161,6 +218,7 @@ async fn watcher_loop(state: SharedState, app_handle: tauri::AppHandle) {
                         s.ranked = Some(ranked);
                     }
                     let _ = app_handle.emit("app-state-changed", s.clone());
+                    save_config(&app_handle, &s);
                     log::info!("Connected to LCU");
                     break creds;
                 }
@@ -190,9 +248,24 @@ async fn poll_loop(
     > = std::collections::HashMap::new();
     // Bounded retries for backfilling the post-game gold chart from the LCU.
     let mut timeline_backfill_tries: u32 = 0;
+    let mut rank_poll_ticks: u32 = 59;
 
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+        // Account identity can change without the client process or game phase changing.
+        let identity = lcu::get_current_summoner(&creds).await.ok()
+            .and_then(|me| me.puuid).filter(|p| !p.is_empty());
+        let credentials_changed = lcu::read_lockfile()
+            .map(|current| current.port != creds.port || current.password != creds.password)
+            .unwrap_or(true);
+        let mut account = state.lock().await;
+        if credentials_changed || identity.is_none() || identity != account.summoner_puuid {
+            clear_account(&mut account, &app_handle);
+            let _ = app_handle.emit("app-state-changed", account.clone());
+            break;
+        }
+        drop(account);
 
         let phase = match lcu::get_gameflow_phase(&creds).await {
             Ok(p) => {
@@ -201,6 +274,7 @@ async fn poll_loop(
             }
             Err(_) => {
                 let mut s = state.lock().await;
+                clear_account(&mut s, &app_handle);
                 s.status = ConnectionStatus::Disconnected;
                 s.champion_id = None;
                 s.build = None;
@@ -212,6 +286,26 @@ async fn poll_loop(
                 break;
             }
         };
+
+        rank_poll_ticks += 1;
+        if rank_poll_ticks >= 60 && !matches!(phase.as_str(), "InProgress" | "Reconnect" | "ChampSelect") {
+            rank_poll_ticks = 0;
+            if let Ok(ranked) = lcu::get_ranked_stats(&creds).await {
+                let mut s = state.lock().await;
+                if ranked.tier != "UNRANKED" && s.summoner_puuid == identity {
+                    s.lp_history.push(config::LpEntry {
+                        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64,
+                        queue_type: "RANKED_SOLO_5x5".into(), wins: Some(ranked.wins), losses: Some(ranked.losses),
+                        lp: ranked.lp, tier: ranked.tier.clone(), rank: ranked.rank.clone(),
+                    });
+                    let cutoff = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64 - 32 * 86400000;
+                    s.lp_history.retain(|e| e.timestamp >= cutoff);
+                    s.ranked = Some(ranked);
+                    save_config(&app_handle, &s);
+                    let _ = app_handle.emit("app-state-changed", s.clone());
+                }
+            }
+        }
 
         if phase == "ReadyCheck" {
             let auto_accept = state.lock().await.auto_accept;
@@ -275,8 +369,10 @@ async fn poll_loop(
                                             slot.perks = lcu::swiftplay_perks_string(runes);
                                         }
                                         if let Some([spell1, spell2]) = result.build.summoner_spells {
-                                            slot.spell1 = spell1;
-                                            slot.spell2 = spell2;
+                                            let key = state.lock().await.flash_key.clone();
+                                            let spells = ordered_spells([spell1, spell2], &key);
+                                            slot.spell1 = spells[0];
+                                            slot.spell2 = spells[1];
                                         }
                                         if let Some(sid) = summoner_id {
                                             if let Err(e) = lcu::apply_item_set(
@@ -407,6 +503,7 @@ async fn poll_loop(
                 if last_build_key.is_some() {
                     last_build_key = None;
                     let mut s = state.lock().await;
+                    s.build_path = "auto".to_string();
                     s.champion_id = None;
                     s.build = None;
                     s.build_alternatives = None;
@@ -504,7 +601,9 @@ async fn poll_loop(
                         let build = result.build.clone();
                         {
                             let mut s = state.lock().await;
-                            s.build = Some(result.build);
+                            let mut shown_build = result.build;
+                            shown_build.summoner_spells = shown_build.summoner_spells.map(|spells| ordered_spells(spells, &s.flash_key));
+                            s.build = Some(shown_build);
                             s.build_alternatives = Some(result.alternatives);
                             // Store counters with string keys for JSON serialization
                             s.counters = result.counters.iter()
@@ -520,7 +619,9 @@ async fn poll_loop(
                                 }
                             }
                             if let Some([s1, s2]) = build.summoner_spells {
-                                if let Err(e) = lcu::apply_summoner_spells(&creds, s1, s2).await {
+                                let key = state.lock().await.flash_key.clone();
+                                let ordered = ordered_spells([s1, s2], &key);
+                                if let Err(e) = lcu::apply_summoner_spells(&creds, ordered[0], ordered[1]).await {
                                     log::warn!("Failed to apply spells: {}", e);
                                 }
                             }
@@ -688,6 +789,7 @@ async fn poll_loop(
                         s.counters.clear();
                         s.draft = None;
                         s.recommendations = vec![];
+                        s.build_path = "auto".to_string();
                         last_build_key = None;
                         last_draft_hash = 0;
                         let _ = app_handle.emit("app-state-changed", s.clone());
@@ -769,6 +871,7 @@ async fn poll_loop(
                 s.counters.clear();
                         s.draft = None;
                         s.recommendations = vec![];
+                        s.build_path = "auto".to_string();
                         last_build_key = None;
                         last_draft_hash = 0;
                         let _ = app_handle.emit("app-state-changed", s.clone());
@@ -821,6 +924,7 @@ async fn poll_loop(
                     s.live_game = None;
                 }
                 s.game_mode = "classic".to_string();
+                s.build_path = "auto".to_string();
                 last_build_key = None;
                 last_draft_hash = 0;
                 timeline_backfill_tries = 0;
@@ -837,8 +941,10 @@ async fn poll_loop(
                         .map(|old| old.lp != ranked.lp || old.tier != ranked.tier || old.rank != ranked.rank)
                         .unwrap_or(true);
 
-                    if should_record && ranked.tier != "UNRANKED" {
+                    if (should_record || s.lp_history.last().map(|e| e.queue_type.is_empty()).unwrap_or(true)) && ranked.tier != "UNRANKED" {
                         let entry = config::LpEntry {
+                            queue_type: "RANKED_SOLO_5x5".to_string(),
+                            wins: Some(ranked.wins), losses: Some(ranked.losses),
                             timestamp: std::time::SystemTime::now()
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap_or_default()
@@ -848,9 +954,9 @@ async fn poll_loop(
                             rank: ranked.rank.clone(),
                         };
                         s.lp_history.push(entry);
-                        // Keep last 50 entries
-                        if s.lp_history.len() > 50 {
-                            s.lp_history = s.lp_history[s.lp_history.len()-50..].to_vec();
+                        // Bound minute samples while retaining daily baselines
+                        if s.lp_history.len() > 50000 {
+                            s.lp_history = s.lp_history[s.lp_history.len()-50000..].to_vec();
                         }
                         // Persist
                         save_config(&app_handle, &s);
@@ -874,7 +980,8 @@ async fn apply_build_now(state: tauri::State<'_, SharedState>) -> Result<(), Str
             lcu::apply_runes(&creds, runes).await?;
         }
         if let Some([s1, s2]) = build.summoner_spells {
-            lcu::apply_summoner_spells(&creds, s1, s2).await?;
+            let ordered = ordered_spells([s1, s2], &s.flash_key);
+            lcu::apply_summoner_spells(&creds, ordered[0], ordered[1]).await?;
         }
         if let (Some(sid), Some(cid)) = (s.summoner_id, s.champion_id) {
             lcu::apply_item_set(&creds, sid, cid, build).await?;
@@ -897,6 +1004,7 @@ async fn select_build_option(
     // Clone what we need from alternatives before mutating build
     let alts = s.build_alternatives.clone().ok_or("No alternatives available")?;
 
+    let preferred_flash = s.flash_key.clone();
     let build = s.build.as_mut().ok_or("No build available")?;
     match category.as_str() {
         "runes" => {
@@ -905,7 +1013,7 @@ async fn select_build_option(
         }
         "spells" => {
             let opt = alts.summoner_spells.get(index).ok_or("Invalid spell index")?;
-            build.summoner_spells = Some(opt.ids);
+            build.summoner_spells = Some(ordered_spells(opt.ids, &preferred_flash));
         }
         "items" => {
             let opt = alts.core_items.get(index).ok_or("Invalid item index")?;
@@ -922,6 +1030,7 @@ async fn select_build_option(
         let build = s.build.clone().unwrap();
         let summoner_id = s.summoner_id;
         let champion_id = s.champion_id;
+        let flash_key = s.flash_key.clone();
         drop(s);
 
         if let Some(ref runes) = build.runes {
@@ -930,8 +1039,9 @@ async fn select_build_option(
             }
         }
         if let Some([s1, s2]) = build.summoner_spells {
+            let ordered = ordered_spells([s1, s2], &flash_key);
             if category == "spells" {
-                let _ = lcu::apply_summoner_spells(&creds, s1, s2).await;
+                let _ = lcu::apply_summoner_spells(&creds, ordered[0], ordered[1]).await;
             }
         }
         if category == "items" {
@@ -1179,6 +1289,11 @@ fn position_overlay_window(app_handle: &tauri::AppHandle, position: &str) -> Res
             .ok_or("No monitor found")?;
         let screen = monitor.size();
         let origin = monitor.position();
+        let preference = app_handle.state::<SharedState>().try_lock().map(|s| s.ui_scale).unwrap_or(1.15);
+        let width = (520.0 * preference * scale).min(screen.width as f64 - 20.0).max(280.0) as u32;
+        let height = (820.0 * preference * scale).min(screen.height as f64 - 40.0).max(300.0) as u32;
+        window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
+            .map_err(|e| format!("Failed to resize overlay: {}", e))?;
         let outer = window.outer_size().unwrap_or(tauri::PhysicalSize::new(340, 620));
         let ow = outer.width as i32;
         let oh = outer.height as i32;
@@ -1289,10 +1404,19 @@ async fn overlay_loop(state: SharedState, app_handle: tauri::AppHandle) {
         let tab_pressed = macos_tab_events.load(std::sync::atomic::Ordering::Relaxed)
             || macos_tab_key_pressed();
 
+        #[cfg(not(target_os = "macos"))]
+        let interact = keys.contains(&Keycode::LShift) || keys.contains(&Keycode::RShift);
+        #[cfg(target_os = "macos")]
+        let interact = macos_key_pressed(0x38) || macos_key_pressed(0x3C);
+        if tab_pressed {
+            if let Some(window) = app_handle.get_webview_window("overlay") {
+                let _ = window.set_ignore_cursor_events(!interact);
+            }
+        }
         if tab_pressed && !was_visible {
             if let Some(window) = app_handle.get_webview_window("overlay") {
                 let _ = window.show();
-                let _ = window.set_ignore_cursor_events(true);
+                let _ = window.set_ignore_cursor_events(!interact);
                 #[cfg(target_os = "macos")]
                 let _ = configure_macos_overlay(&window, true);
             }
@@ -1369,7 +1493,10 @@ fn start_macos_tab_monitor() -> Arc<std::sync::atomic::AtomicBool> {
 }
 
 #[cfg(target_os = "macos")]
-fn macos_tab_key_pressed() -> bool {
+fn macos_tab_key_pressed() -> bool { macos_key_pressed(0x30) }
+
+#[cfg(target_os = "macos")]
+fn macos_key_pressed(key: u16) -> bool {
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
         fn CGEventSourceKeyState(state_id: i32, key: u16) -> bool;
@@ -1379,10 +1506,9 @@ fn macos_tab_key_pressed() -> bool {
     // different state depending on the active Space and input permissions.
     const COMBINED_SESSION_STATE: i32 = 0;
     const HID_SYSTEM_STATE: i32 = 1;
-    const TAB_KEY_CODE: u16 = 0x30;
     unsafe {
-        CGEventSourceKeyState(COMBINED_SESSION_STATE, TAB_KEY_CODE)
-            || CGEventSourceKeyState(HID_SYSTEM_STATE, TAB_KEY_CODE)
+        CGEventSourceKeyState(COMBINED_SESSION_STATE, key)
+            || CGEventSourceKeyState(HID_SYSTEM_STATE, key)
     }
 }
 
@@ -1463,6 +1589,8 @@ pub fn run() {
             back_to_lobby,
             swap_aram_bench,
             set_overlay_position,
+            set_display_preferences,
+            set_build_path,
             test_overlay,
             set_tts_enabled,
             speak,
@@ -1493,6 +1621,8 @@ pub fn run() {
                 s.auto_accept = cfg.auto_accept;
                 s.tts_enabled = cfg.tts_enabled;
                 s.overlay_position = cfg.overlay_position;
+                s.ui_scale = if cfg.ui_scale.is_finite() && (1.0..=1.5).contains(&cfg.ui_scale) { cfg.ui_scale } else { config::default_ui_scale() };
+                s.flash_key = if matches!(cfg.flash_key.as_str(), "D" | "F") { cfg.flash_key } else { config::default_flash_key() };
                 // lp_history stays empty until the watcher learns the active
                 // puuid; at that point we hydrate from the right bucket.
                 s.lp_history = vec![];
@@ -1575,5 +1705,18 @@ mod tests {
         assert_eq!(value["primaryStyleId"], 8000);
         assert_eq!(value["subStyleId"], 8300);
         assert_eq!(value["selectedPerkIds"].as_array().unwrap().len(), 9);
+    }
+}
+
+#[cfg(test)]
+mod preference_tests {
+    use super::ordered_spells;
+    #[test]
+    fn flash_position_is_stable() {
+        assert_eq!(ordered_spells([4, 7], "F"), [7, 4]);
+        assert_eq!(ordered_spells([7, 4], "F"), [7, 4]);
+        assert_eq!(ordered_spells([7, 4], "D"), [4, 7]);
+        assert_eq!(ordered_spells([4, 7], "D"), [4, 7]);
+        assert_eq!(ordered_spells([11, 6], "F"), [11, 6]);
     }
 }

@@ -100,6 +100,9 @@ pub struct AppState {
     pub tts_enabled: bool,
     pub region: String,
     pub overlay_position: String,
+    pub ui_scale: f64,
+    pub flash_key: String,
+    pub build_path: String,
 }
 
 // --- Post-game stats ---
@@ -227,6 +230,9 @@ impl Default for AppState {
             tts_enabled: false,
             region: "euw".to_string(),
             overlay_position: "top-right".to_string(),
+            ui_scale: crate::config::default_ui_scale(),
+            flash_key: crate::config::default_flash_key(),
+            build_path: "auto".to_string(),
         }
     }
 }
@@ -663,6 +669,8 @@ pub struct LiveGamePlayer {
     pub champ_games: i32,
     pub champ_wins: i32,
     pub champ_kda: f64,
+    #[serde(default)]
+    pub recent_matches: Vec<MatchHistoryEntry>,
     // Premade detection: same non-zero id = inferred party (duo/trio) within the team.
     // None = no premade signal. Assigned per team from shared recent match history.
     #[serde(default)]

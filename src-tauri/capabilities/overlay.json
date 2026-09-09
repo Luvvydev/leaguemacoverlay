@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "Read app state events in the TAB overlay",
+  "windows": ["overlay"],
+  "permissions": ["core:event:default"]
+}

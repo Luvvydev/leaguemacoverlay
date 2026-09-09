@@ -55,4 +55,4 @@ git push origin main --follow-tags
 echo ""
 echo "Done! Release $TAG pushed."
 echo "GitHub Actions will build and create the release at:"
-echo "https://github.com/ishtartec/query-lol-desktop/releases/tag/$TAG"
+echo "https://github.com/Luvvydev/leaguemacoverlay/releases/tag/$TAG"

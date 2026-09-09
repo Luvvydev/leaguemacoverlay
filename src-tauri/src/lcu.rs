@@ -1629,6 +1629,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                     ranked_losses: 0,
                     ranked_win_rate: 0.0,
                     streak: 0,
+                    recent_matches: vec![],
                     champ_games: 0,
                     champ_wins: 0,
                     champ_kda: 0.0,
@@ -1702,6 +1703,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
         name: String,
         smurf: Option<SmurfAnalysis>,
         streak: i32,
+        recent_matches: Vec<MatchHistoryEntry>,
         champ_games: i32,
         champ_wins: i32,
         champ_kda: f64,
@@ -1736,6 +1738,14 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
             } else {
                 vec![]
             };
+
+            let cutoff = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_millis() as i64 - 30 * 86400000;
+            let mut matches: Vec<MatchHistoryEntry> = matches.into_iter().filter(|m|
+                matches!(m.queue_id, 400 | 420 | 430 | 440 | 490)
+                    && m.duration_secs > 300 && m.timestamp >= cutoff).collect();
+            matches.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            matches.dedup_by_key(|m| m.game_id);
 
             // Streak: count consecutive wins or losses from most recent
             let streak = {
@@ -1781,7 +1791,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
                 .map(|m| (m.game_id, m.team_id))
                 .collect();
 
-            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda, match_keys }
+            PlayerFetchResult { rank, wins, losses, name, smurf, streak, champ_games, champ_wins, champ_kda, match_keys, recent_matches: matches }
         }));
     }
 
@@ -1800,6 +1810,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
             p.champ_games = r.champ_games;
             p.champ_wins = r.champ_wins;
             p.champ_kda = r.champ_kda;
+            p.recent_matches = r.recent_matches;
             if !r.name.is_empty() {
                 p.summoner_name = r.name;
             }

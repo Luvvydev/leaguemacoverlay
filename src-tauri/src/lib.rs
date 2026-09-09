@@ -1289,11 +1289,6 @@ fn position_overlay_window(app_handle: &tauri::AppHandle, position: &str) -> Res
             .ok_or("No monitor found")?;
         let screen = monitor.size();
         let origin = monitor.position();
-        let preference = app_handle.state::<SharedState>().try_lock().map(|s| s.ui_scale).unwrap_or(1.15);
-        let width = (520.0 * preference * scale).min(screen.width as f64 - 20.0).max(280.0) as u32;
-        let height = (820.0 * preference * scale).min(screen.height as f64 - 40.0).max(300.0) as u32;
-        window.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
-            .map_err(|e| format!("Failed to resize overlay: {}", e))?;
         let outer = window.outer_size().unwrap_or(tauri::PhysicalSize::new(340, 620));
         let ow = outer.width as i32;
         let oh = outer.height as i32;

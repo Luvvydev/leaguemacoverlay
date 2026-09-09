@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 const source = readFileSync(new URL('../src/recommendationLogic.ts', import.meta.url), 'utf8');
+const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+const backendSource = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
 const { rankValue, dailySoloLp, historyLabels, availablePaths, choosePath, componentCredit } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 let checks = 0;
@@ -33,4 +35,7 @@ test('component does not trigger a new path',()=>assert.equal(choosePath(paths,'
 const tree = id=>({...item(id),gold:id===10?1000:id===2?600:400,from:id===10?[2,1]:id===2?[1]:[]});
 test('one component is not counted twice',()=>assert.equal(componentCredit(10,[1],tree),400));
 test('duplicate owned components are counted correctly',()=>assert.equal(componentCredit(10,[1,1],tree),800));
+test('TAB item path renders before the player roster',()=>assert.ok(appSource.indexOf('className="ov-build ov-build-primary"') < appSource.indexOf('className="ov-lanes"')));
+test('TAB overlay has no duplicate full player-label drawer',()=>assert.ok(!appSource.includes('className="overlay-player-labels"')));
+test('TAB overlay keeps its configured compact window size',()=>assert.ok(!backendSource.includes('520.0 * preference')));
 console.log(`${checks} checks passed.`);

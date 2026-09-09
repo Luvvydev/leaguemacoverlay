@@ -2271,7 +2271,7 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
       <h3 className="card-label">Skill Priority</h3>
       <div className="skills-row">
         {priority.map((slot, i) => (
-          <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: `calc(${i === 0 ? 14 : 13}px * var(--ui-scale))` }, "skill-pip")}</span>
+          <span key={i}>{pip(slot, { opacity: 1 - i * 0.2, fontSize: i === 0 ? 14 : 12 }, "skill-pip")}</span>
         ))}
       </div>
       {levels.length > 0 && (
@@ -2284,7 +2284,7 @@ function SkillPanel({ priority, levels, championId }: { priority: string[]; leve
               <div key={i} className="skill-lvl">
                 <span className="skill-lvl-num">{i + 1}</span>
                 <div className="skill-lvl-pip">
-                  {pip(slot, { fontSize: "calc(13px * var(--ui-scale))" }, "skill-pip-sm", evolve)}
+                  {pip(slot, { fontSize: 10 }, "skill-pip-sm", evolve)}
                   {evolve && <span className="skill-evolve">{evolve}</span>}
                 </div>
               </div>
@@ -2526,10 +2526,17 @@ function BuildPathPicker({ paths, active, selection, overlay = false }: {
     setError("");
     invoke("set_build_path", { path }).catch(e => setError(String(e)));
   }
+  if (overlay) return <details className="build-path-picker build-path-picker-overlay">
+    <summary title="Hold Shift + TAB to change the build path">Build: {active?.label || "Recommended"}</summary>
+    <div className="build-path-options">
+      <button aria-pressed={selection === "auto"} onClick={() => choose("auto")}>Auto adapt</button>
+      {paths.map(p => <button key={p.id} aria-pressed={selection === p.id} onClick={() => choose(p.id)}>{p.label}</button>)}
+    </div>
+    {error && <p role="alert">{error}</p>}
+  </details>;
   return <div className="build-path-picker">
     <div className="build-path-heading"><strong>Build: {active?.label || "Recommended"}</strong>
       <span>{selection === "auto" ? "Adapts to completed purchases" : "Locked for this game"}</span></div>
-    {overlay && <p className="build-path-help">Hold Shift + TAB to click or scroll</p>}
     <details><summary>Change build style</summary><div className="build-path-options">
       <button aria-pressed={selection === "auto"} onClick={() => choose("auto")}>Auto adapt</button>
       {paths.map(p => <button key={p.id} aria-pressed={selection === p.id} onClick={() => choose(p.id)}>{p.label}</button>)}
@@ -2630,9 +2637,6 @@ function App() {
       </header>
 
       <div className="display-preferences">
-        <label>Text size <select value={state.ui_scale} onChange={e => invoke("set_display_preferences", { uiScale: Number(e.target.value), flashKey: state.flash_key }).catch(e => showError(String(e)))}>
-          <option value={1}>Standard</option><option value={1.15}>Large</option><option value={1.3}>Larger</option><option value={1.5}>Largest</option>
-        </select></label>
         <label>Flash key <select value={state.flash_key} onChange={e => invoke("set_display_preferences", { uiScale: state.ui_scale, flashKey: e.target.value }).catch(e => showError(String(e)))}>
           <option value="F">F</option><option value="D">D</option>
         </select></label>
@@ -4085,7 +4089,7 @@ function LobbyProfileOverview({ name, profileIconId, ranked, history }: {
       <div className="profile-personality-card">
         <span className="profile-card-title">YOUR PLAYSTYLE</span>
         <div className="profile-label-list">
-          {labels.length > 0 ? labels.map(label => <ProfileLabelChip key={label.label} badge={label} />) : (
+          {labels.length > 0 ? labels.slice(0, 4).map(label => <ProfileLabelChip key={label.label} badge={label} />) : (
             <span className="profile-label-empty">Play a few full games to build your profile.</span>
           )}
         </div>
@@ -6661,7 +6665,7 @@ function OverlayApp() {
         <span className="ov-cspm-label">CS / MIN</span>
         <span className="ov-cspm-total">0 CS</span>
       </div>
-      <span style={{ color: "var(--text-muted)", fontSize: "calc(14px * var(--ui-scale))" }}>Waiting for game data...</span>
+      <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Waiting for game data...</span>
     </div>
   );
   const game = state.live_game;
@@ -6854,12 +6858,45 @@ function OverlayApp() {
         <span className="ov-cspm-total">{me?.live?.cs ?? 0} CS</span>
       </div>
 
+      {/* Compact item path stays above the roster. */}
+      <div className="ov-build ov-build-primary">
+        {ovBuildSlots.length > 0 ? <>
+            {ovBuildSlots.map((slot, i) => (
+              <div key={slot.id + "_" + i} className={`ov-build-slot ov-build-${slot.state}`} title={slot.name}>
+                <img src={itemIconUrl(slot.id)} alt="" className="ov-build-icon" />
+                {slot.state === "owned" && <span className="ov-build-check">✓</span>}
+                {slot.state === "next" && (
+                  <span className="ov-build-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
+                )}
+                {slot.state === "next" && slot.goldNeeded != null && slot.goldNeeded > 0 && (
+                  <span className="ov-build-need">{slot.goldNeeded}g</span>
+                )}
+                {slot.state === "next" && slot.goldNeeded === 0 && <span className="ov-build-ready">B</span>}
+              </div>
+            ))}
+            {ovThreat && (
+              <div className={`ov-build-threat ov-threat-${ovThreat.kind}`} title={`${ovThreat.itemName} · ${ovThreat.reason}`}>
+                <img src={itemIconUrl(ovThreat.itemId)} alt="" className="ov-build-icon" />
+                <span className="ov-build-threat-tag">!</span>
+              </div>
+            )}
+            {ovShield && (
+              <div className="ov-build-threat ov-threat-anti-shield" title={`${ovShield.itemName} · ${ovShield.reason}`}>
+                <img src={itemIconUrl(ovShield.itemId)} alt="" className="ov-build-icon" />
+                <span className="ov-build-threat-tag">S</span>
+              </div>
+            )}
+            {ovPen && (
+              <div className="ov-build-threat ov-build-pen">
+                <img src={itemIconUrl(ovPen.itemId)} alt="" className="ov-build-icon" />
+                <span className="ov-build-pen-tag">+{ovPen.gainPercent}%</span>
+              </div>
+            )}
+          </>
+        : <span className="ov-build-loading">Loading items...</span>}
+      </div>
+
       <BuildPathPicker paths={pathState.paths} active={pathState.active} selection={state.build_path} overlay />
-      <details className="overlay-player-labels"><summary>Player labels</summary>
-        {[...game.allies, ...game.enemies].map(p => <div key={p.puuid || p.summoner_name}>
-          <strong>{p.summoner_name}</strong><div className="profile-label-list">{getPlayerLabels(p).map(b => <span key={b.text} className={`profile-label ${b.cls}`} title={b.title}>{b.text}</span>)}</div>
-        </div>)}
-      </details>
       {/* Lane matchups */}
       <div className="ov-lanes">
         {matchups.map((m, i) => (
@@ -6869,7 +6906,7 @@ function OverlayApp() {
                 <ChampionIcon championId={m.ally.champion_id} size={28} />
                 {m.ally.live && <span className="ov-champ-lvl">{m.ally.live.level}</span>}
               </div>
-              <div className="ov-player-summary"><strong>{m.ally.summoner_name}</strong><span>{m.ally.rank || "Rank unavailable"}</span><span>{m.ally.live && ld && ld.game_time > 0 ? `${(m.ally.live!.cs / (ld.game_time / 60)).toFixed(1)} CS/min` : "CS unavailable"}</span><span className="ov-lane-gold">{Math.round(m.allyGold).toLocaleString()}g</span><div className="ov-inline-labels">{getPlayerLabels(m.ally).slice(0, 3).map(b => <span key={b.text} className={`profile-label ${b.cls}`} title={b.title}>{b.text}</span>)}</div></div>
+              <span className="ov-lane-gold">{Math.round(m.allyGold).toLocaleString()}</span>
             </div>
             <div className="ov-lane-center">
               <span className={`ov-lane-diff ${m.diff > 200 ? "lg-wr-good" : m.diff < -200 ? "lg-wr-bad" : ""}`}>
@@ -6877,7 +6914,7 @@ function OverlayApp() {
               </span>
             </div>
             <div className="ov-lane-player ov-lane-enemy">
-              <div className="ov-player-summary"><strong>{m.enemy.summoner_name}</strong><span>{m.enemy.rank || "Rank unavailable"}</span><span>{m.enemy.live && ld && ld.game_time > 0 ? `${(m.enemy.live!.cs / (ld.game_time / 60)).toFixed(1)} CS/min` : "CS unavailable"}</span><span className="ov-lane-gold">{Math.round(m.enemyGold).toLocaleString()}g</span><div className="ov-inline-labels">{getPlayerLabels(m.enemy).slice(0, 3).map(b => <span key={b.text} className={`profile-label ${b.cls}`} title={b.title}>{b.text}</span>)}</div></div>
+              <span className="ov-lane-gold">{Math.round(m.enemyGold).toLocaleString()}</span>
               <div className="ov-champ">
                 {m.enemy.live && <span className="ov-champ-lvl">{m.enemy.live.level}</span>}
                 <ChampionIcon championId={m.enemy.champion_id} size={28} />
@@ -6957,45 +6994,6 @@ function OverlayApp() {
               </span>
             );
           })}
-        </div>
-      )}
-
-      {/* Compact build strip */}
-      {ovBuildSlots.length > 0 && (
-        <div className="ov-build">
-          {ovBuildSlots.map((slot, i) => (
-            <div key={slot.id + "_" + i} className={`ov-build-slot ov-build-${slot.state}`} title={slot.name}>
-              <img src={itemIconUrl(slot.id)} alt="" className="ov-build-icon" />
-              {slot.state === "owned" && <span className="ov-build-check">✓</span>}
-              {slot.state === "next" && (
-                <span className="ov-build-ring" style={{ background: `conic-gradient(var(--accent-gold) ${(slot.progressPct ?? 0) * 3.6}deg, transparent 0deg)` }} />
-              )}
-              {slot.state === "next" && slot.goldNeeded != null && slot.goldNeeded > 0 && (
-                <span className="ov-build-need">{slot.goldNeeded}g</span>
-              )}
-              {slot.state === "next" && slot.goldNeeded === 0 && (
-                <span className="ov-build-ready">B</span>
-              )}
-            </div>
-          ))}
-          {ovThreat && (
-            <div className={`ov-build-threat ov-threat-${ovThreat.kind}`} title={`${ovThreat.itemName} · ${ovThreat.reason}`}>
-              <img src={itemIconUrl(ovThreat.itemId)} alt="" className="ov-build-icon" />
-              <span className="ov-build-threat-tag">!</span>
-            </div>
-          )}
-          {ovShield && (
-            <div className="ov-build-threat ov-threat-anti-shield" title={`${ovShield.itemName} · ${ovShield.reason}`}>
-              <img src={itemIconUrl(ovShield.itemId)} alt="" className="ov-build-icon" />
-              <span className="ov-build-threat-tag">S</span>
-            </div>
-          )}
-          {ovPen && (
-            <div className="ov-build-threat ov-build-pen">
-              <img src={itemIconUrl(ovPen.itemId)} alt="" className="ov-build-icon" />
-              <span className="ov-build-pen-tag">+{ovPen.gainPercent}%</span>
-            </div>
-          )}
         </div>
       )}
 

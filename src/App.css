@@ -1,12 +1,12 @@
 /* === Base === */
 :root {
-  --bg-primary: #0a0e13;
-  --bg-card: #111820;
-  --bg-card-hover: #161f2a;
-  --border: #1e2a38;
-  --text-primary: #e8e4de;
-  --text-secondary: #7a8595;
-  --text-muted: #4a5568;
+  --bg-primary: #20252c;
+  --bg-card: #2a3039;
+  --bg-card-hover: #323944;
+  --border: #3b4350;
+  --text-primary: #f1f3f5;
+  --text-secondary: #b2bac5;
+  --text-muted: #7f8997;
   --accent-gold: #c89b3c;
   --accent-gold-dim: #8b6914;
   --accent-blue: #0397ab;
@@ -55,6 +55,7 @@
 .tt-desc { font-size: 10px; color: var(--text-secondary); line-height: 1.4; }
 
 .app {
+  background: var(--bg-primary);
   padding: 0 24px 20px;
   height: 100vh;
   display: flex;
@@ -654,15 +655,8 @@
   padding: 16px 18px; background: var(--bg-card);
   border: 1px solid var(--border); border-radius: 10px;
   margin-bottom: 10px;
-  background-size: cover; background-position: center 20%;
   position: relative; overflow: hidden;
 }
-.champion-card::before {
-  content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(10, 14, 19, 0.92) 0%, rgba(10, 14, 19, 0.75) 50%, rgba(10, 14, 19, 0.6) 100%);
-  z-index: 0;
-}
-.champion-card > * { position: relative; z-index: 1; }
 .champion-avatar {
   width: 50px; height: 50px; border-radius: 8px;
   overflow: hidden; border: 2px solid var(--accent-gold-dim); flex-shrink: 0;
@@ -912,29 +906,24 @@
 .profile-summary-card,
 .profile-personality-card,
 .profile-champion-table {
-  background: linear-gradient(145deg, rgba(17, 24, 32, 0.96), rgba(11, 17, 24, 0.94));
+  background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.16);
+  border-radius: 7px;
 }
 .profile-identity-card {
   display: flex;
   align-items: center;
   min-width: 0;
   padding: 14px 16px;
-  border-color: rgba(200, 155, 60, 0.25);
-  background:
-    radial-gradient(circle at 10% 50%, rgba(3, 151, 171, 0.12), transparent 38%),
-    linear-gradient(145deg, rgba(17, 24, 32, 0.98), rgba(11, 17, 24, 0.94));
+  border-color: var(--border);
 }
 .profile-avatar-shell {
   width: 76px;
   height: 76px;
   flex-shrink: 0;
   padding: 3px;
-  border-radius: 18px;
-  background: linear-gradient(135deg, #16d5e3, var(--accent-gold), #ff2e9b);
-  box-shadow: 0 0 22px rgba(3, 151, 171, 0.16);
+  border-radius: 10px;
+  background: var(--border);
 }
 .profile-avatar,
 .profile-avatar-fallback {
@@ -945,7 +934,7 @@
   justify-content: center;
   object-fit: cover;
   border: 3px solid var(--bg-primary);
-  border-radius: 15px;
+  border-radius: 7px;
   background: var(--bg-card);
 }
 .profile-avatar-fallback {
@@ -1202,15 +1191,6 @@
 }
 .lp-diff { font-size: 13px; font-weight: 800; }
 .lp-chart-svg { width: 100%; height: 48px; display: block; }
-
-/* Lobby Background */
-.lobby-bg {
-  position: fixed; inset: 0; z-index: -1;
-  background-size: cover; background-position: center 20%;
-  opacity: 0.18;
-  filter: blur(1px);
-  pointer-events: none;
-}
 
 /* Mode filter tabs */
 .mh-mode-tabs {
@@ -1546,7 +1526,7 @@
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(8, 13, 20, 0.72);
+  background: var(--bg-card);
 }
 .lg-team-ally { border-top: 2px solid var(--accent-blue); }
 .lg-team-enemy { border-top: 2px solid var(--accent-red); }
@@ -1780,8 +1760,8 @@
   display: flex; flex-direction: column; gap: 6px;
   padding: 8px 10px 10px;
   margin-bottom: 10px;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(200, 155, 60, 0.22);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: 6px;
 }
 .bs-header {
@@ -2795,15 +2775,13 @@
 
 /* === Overlay === */
 .overlay {
-  background: rgba(10, 14, 19, 0.9);
+  background: #242a32;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 14px;
   font-family: Inter, -apple-system, sans-serif;
   color: var(--text-primary);
   display: flex; flex-direction: column; gap: 8px;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   min-width: 280px;
 }
 

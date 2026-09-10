@@ -294,6 +294,7 @@ interface AramBenchChampion {
 interface AppState {
   status: "disconnected" | "connected" | "champ_select" | "in_game" | "post_game";
   summoner_name: string | null;
+  summoner_puuid: string | null;
   profile_icon_id: number | null;
   champion_id: number | null;
   champion_locked: boolean;
@@ -2091,10 +2092,6 @@ function abilityMediaUrl(championId: number, slot: string, ext: "mp4" | "jpg"): 
   return `${ABILITY_CDN}/${id}/ability_${id}_${slot}1.${ext}`;
 }
 
-function splashUrl(championKey: string): string {
-  return `${DDRAGON}/img/champion/splash/${championKey}_0.jpg`;
-}
-
 function rankEmblemUrl(tier: string): string {
   return `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-shared-components/global/default/${tier.toLowerCase()}.png`;
 }
@@ -2548,7 +2545,7 @@ function BuildPathPicker({ paths, active, selection, overlay = false }: {
 
 function App() {
   const [state, setState] = useState<AppState>({
-    status: "disconnected", summoner_name: null, profile_icon_id: null, champion_id: null, champion_locked: false,
+    status: "disconnected", summoner_name: null, summoner_puuid: null, profile_icon_id: null, champion_id: null, champion_locked: false,
     champion_name: null, assigned_position: null, build: null,
     build_alternatives: null, counters: {},
     draft: null, ranked: null, lp_history: [], ban_suggestions: [], comfort_picks: [], prediction: null,
@@ -2566,7 +2563,7 @@ function App() {
   const championInfo = useChampionName(state.champion_id);
   useReadability(state.ui_scale);
   useItemMetadata();
-  useEffect(() => { setPlayerProfile(null); }, [state.summoner_name, state.status === "disconnected"]);
+  useEffect(() => { setPlayerProfile(null); }, [state.summoner_puuid, state.summoner_name, state.status === "disconnected"]);
 
   useEffect(() => {
     invoke<AppState>("get_state").then(setState);
@@ -2746,7 +2743,6 @@ function App() {
           />
           {state.match_history.length > 0 ? (
             <>
-              <LobbyBackground history={state.match_history} />
               <DailySummary history={state.match_history} lpHistory={state.lp_history} />
               <TiltGate history={state.match_history} />
               <div className="profile-dashboard-grid">
@@ -2768,7 +2764,7 @@ function App() {
 
       {/* Live Game */}
       {inGame && state.live_game && (
-        <LiveGameView buildPath={state.build_path} game={state.live_game} summonerName={state.summoner_name} onViewPlayer={viewPlayer} />
+        <LiveGameView buildPath={state.build_path} game={state.live_game} summonerPuuid={state.summoner_puuid} summonerName={state.summoner_name} onViewPlayer={viewPlayer} />
       )}
 
       {/* Champ select */}
@@ -2849,9 +2845,7 @@ function App() {
 
             {hasChampion && championInfo && (
               <section className="section-build">
-                <div className="champion-card" style={{
-                  backgroundImage: `url(${splashUrl(championInfo.key)})`,
-                }}>
+                <div className="champion-card">
                   <div className="champion-avatar">
                     <img src={championIconUrl(championInfo.key)} alt={championInfo.name} />
                   </div>
@@ -5315,7 +5309,7 @@ function useAlertManager(
   }), [setAlerts]);
 }
 
-function LiveGameView({ game, summonerName, onViewPlayer, buildPath }: { buildPath: string; game: LiveGameState; summonerName: string | null; onViewPlayer?: (puuid: string) => void }) {
+function LiveGameView({ game, summonerPuuid, summonerName, onViewPlayer, buildPath }: { buildPath: string; game: LiveGameState; summonerPuuid: string | null; summonerName: string | null; onViewPlayer?: (puuid: string) => void }) {
   const ld = game.live_data;
   // Calculate total gold from players (unspent + items) instead of backend values
   const allyGold = game.allies.reduce((s, p) => s + playerTotalGold(p), 0);
@@ -5343,15 +5337,17 @@ function LiveGameView({ game, summonerName, onViewPlayer, buildPath }: { buildPa
   // Find local player
   const localName = (summonerName ?? "").trim().toLowerCase();
   const localNameShort = localName.split("#")[0];
-  const localPlayer = localNameShort
-    ? game.allies.find(p => {
-        const playerName = p.summoner_name.trim().toLowerCase();
-        return playerName === localName
-          || playerName === localNameShort
-          || playerName.startsWith(localNameShort + "#")
-          || playerName.split("#")[0] === localNameShort;
-      })
-    : undefined;
+  const localPlayer = summonerPuuid
+    ? game.allies.find(p => p.puuid === summonerPuuid)
+    : localNameShort
+      ? game.allies.find(p => {
+          const playerName = p.summoner_name.trim().toLowerCase();
+          return playerName === localName
+            || playerName === localNameShort
+            || playerName.startsWith(localNameShort + "#")
+            || playerName.split("#")[0] === localNameShort;
+        })
+      : undefined;
   const localLive = localPlayer?.live;
   const pathState = resolveBuildPath(game, localPlayer, buildPath);
   const build = pathState.build;
@@ -5535,27 +5531,6 @@ function BanCard({ ban }: { ban: BanSuggestion }) {
 
 // --- Comfort Card ---
 
-
-// --- Lobby Hero (splash art of most played champion) ---
-
-function LobbyBackground({ history }: { history: MatchHistoryEntry[] }) {
-  const counts: Record<number, number> = {};
-  for (const m of history) {
-    counts[m.champion_id] = (counts[m.champion_id] || 0) + 1;
-  }
-  const topChampId = Object.entries(counts)
-    .sort(([, a], [, b]) => b - a)[0]?.[0];
-
-  const champInfo = useChampionName(topChampId ? Number(topChampId) : null);
-
-  if (!champInfo) return null;
-
-  return (
-    <div className="lobby-bg" style={{
-      backgroundImage: `url(${splashUrl(champInfo.key)})`,
-    }} />
-  );
-}
 
 // --- Champion Stats Bar ---
 
@@ -6552,13 +6527,15 @@ function OverlayApp() {
   useEffect(() => {
     const game = state?.live_game;
     const ld = game?.live_data;
-    if (!game || !ld || !state?.summoner_name) return;
-    const target = state.summoner_name.toLowerCase();
+    if (!game || !ld || (!state?.summoner_puuid && !state?.summoner_name)) return;
+    const target = (state.summoner_name ?? "").toLowerCase();
     const targetShort = target.split("#")[0];
-    const me = game.allies.find(a => {
-      const n = a.summoner_name.toLowerCase();
-      return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
-    });
+    const me = state.summoner_puuid
+      ? game.allies.find(a => a.puuid === state.summoner_puuid)
+      : game.allies.find(a => {
+          const n = a.summoner_name.toLowerCase();
+          return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
+        });
     const activeBuild = resolveBuildPath(game, me, state.build_path).build;
     if (!me?.live || !activeBuild) return;
     const owned = new Set(me.live.items);
@@ -6615,15 +6592,17 @@ function OverlayApp() {
   useEffect(() => {
     const game = state?.live_game;
     const ld = game?.live_data;
-    if (!game || !ld || !state?.summoner_name || isAramQueue(game.queue_name)) return;
+    if (!game || !ld || (!state?.summoner_puuid && !state?.summoner_name) || isAramQueue(game.queue_name)) return;
     const gameTime = ld.game_time;
     if (gameTime < 6 * 60) return;
-    const target = state.summoner_name.toLowerCase();
+    const target = (state.summoner_name ?? "").toLowerCase();
     const targetShort = target.split("#")[0];
-    const me = game.allies.find(a => {
-      const n = a.summoner_name.toLowerCase();
-      return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
-    });
+    const me = state.summoner_puuid
+      ? game.allies.find(a => a.puuid === state.summoner_puuid)
+      : game.allies.find(a => {
+          const n = a.summoner_name.toLowerCase();
+          return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
+        });
     if (!me?.live) return;
     const minutes = gameTime / 60;
     const posLower = (me.position || "").toLowerCase();
@@ -6710,17 +6689,16 @@ function OverlayApp() {
 
   // Compact level plan (local player vs lane opponent)
   let me: LiveGamePlayer | null = null;
-  if (state.summoner_name && game.allies.length > 0) {
-    const target = state.summoner_name.toLowerCase();
+  if ((state.summoner_puuid || state.summoner_name) && game.allies.length > 0) {
+    const target = (state.summoner_name ?? "").toLowerCase();
     const targetShort = target.split("#")[0];
-    me = game.allies.find(a => {
-      const n = a.summoner_name.toLowerCase();
-      return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
-    }) ?? null;
+    me = state.summoner_puuid
+      ? game.allies.find(a => a.puuid === state.summoner_puuid) ?? null
+      : game.allies.find(a => {
+          const n = a.summoner_name.toLowerCase();
+          return n === target || n === targetShort || n.startsWith(targetShort + "#") || n.split("#")[0] === targetShort;
+        }) ?? null;
   }
-  // Fallback: if we can't identify the local player, don't block the plan — use the first ally.
-  // This keeps the feature visible even when the name matching fails (logs/debug).
-  if (!me && game.allies.length > 0) me = game.allies[0];
 
   const csPerMinute = me?.live && ld && ld.game_time > 0
     ? me.live.cs / (ld.game_time / 60)

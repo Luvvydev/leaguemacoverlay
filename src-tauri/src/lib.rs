@@ -114,11 +114,15 @@ fn same_riot_name(a: &str, b: &str) -> bool {
 
 fn local_live_build_key(
     live: &models::LiveGameState,
+    summoner_puuid: &str,
     summoner_name: &str,
 ) -> Option<(i64, String)> {
-    live.allies.iter()
-        .find(|p| same_riot_name(&p.summoner_name, summoner_name))
-        .or_else(|| live.allies.first())
+    let local_player = if !summoner_puuid.is_empty() {
+        live.allies.iter().find(|p| p.puuid == summoner_puuid)
+    } else {
+        live.allies.iter().find(|p| same_riot_name(&p.summoner_name, summoner_name))
+    };
+    local_player
         .and_then(|p| {
             let position = map_position(&p.position);
             (p.champion_id > 0 && !position.is_empty())
@@ -738,11 +742,12 @@ async fn poll_loop(
                 }
             }
         } else if phase == "InProgress" || phase == "GameStart" {
-            let (already_in_game, sid, my_name, region) = {
+            let (already_in_game, sid, my_puuid, my_name, region) = {
                 let s = state.lock().await;
                 (
                     s.status == ConnectionStatus::InGame && s.live_game.is_some(),
                     s.summoner_id,
+                    s.summoner_puuid.clone().unwrap_or_default(),
                     s.summoner_name.clone().unwrap_or_default(),
                     s.region.clone(),
                 )
@@ -756,9 +761,9 @@ async fn poll_loop(
                     let _ = app_handle.emit("app-state-changed", s.clone());
                 }
                 // Fetch live game info once on transition
-                match lcu::get_live_game(&creds, sid, &my_name).await {
+                match lcu::get_live_game(&creds, sid, &my_puuid, &my_name).await {
                     Ok(mut live) => {
-                        let live_key = local_live_build_key(&live, &my_name);
+                        let live_key = local_live_build_key(&live, &my_puuid, &my_name);
                         let mut recommended = live_key.as_ref()
                             .and_then(|key| swiftplay_builds.get(key).cloned());
                         if recommended.is_none() {

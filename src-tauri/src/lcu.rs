@@ -1563,7 +1563,7 @@ pub async fn get_current_queue(creds: &LcuCredentials) -> Result<(i64, String), 
 }
 
 /// Get live game session info (players in current game).
-pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, my_name: &str) -> Result<LiveGameState, String> {
+pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, my_puuid: &str, my_name: &str) -> Result<LiveGameState, String> {
     let client = lcu_client();
     let resp = client
         .get(lcu_url(creds, "/lol-gameflow/v1/session"))
@@ -1655,16 +1655,27 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
         team_two_raw = parse_players_raw(arr);
     }
 
-    // Resolve which team the local player is on. Try summoner_id first, then
-    // fall back to summoner-name matching (post-Riot-ID clients sometimes omit
-    // summoner_id entirely, leaving team detection inverted).
-    if let Some(sid) = my_summoner_id.filter(|s| *s > 0) {
-        if team_one_raw.iter().any(|r| r.summoner_id == sid) {
+    // PUUID is stable across account switches. Use it before the legacy
+    // summoner ID and name fallbacks so stale identity data cannot select the
+    // wrong team or another player's build.
+    if !my_puuid.is_empty() {
+        if team_one_raw.iter().any(|r| r.puuid == my_puuid) {
             my_team_is_one = true;
             team_resolved = true;
-        } else if team_two_raw.iter().any(|r| r.summoner_id == sid) {
+        } else if team_two_raw.iter().any(|r| r.puuid == my_puuid) {
             my_team_is_one = false;
             team_resolved = true;
+        }
+    }
+    if !team_resolved {
+        if let Some(sid) = my_summoner_id.filter(|s| *s > 0) {
+            if team_one_raw.iter().any(|r| r.summoner_id == sid) {
+                my_team_is_one = true;
+                team_resolved = true;
+            } else if team_two_raw.iter().any(|r| r.summoner_id == sid) {
+                my_team_is_one = false;
+                team_resolved = true;
+            }
         }
     }
     if !team_resolved && !my_name.is_empty() {
@@ -1682,7 +1693,7 @@ pub async fn get_live_game(creds: &LcuCredentials, my_summoner_id: Option<i64>, 
         }
     }
     if !team_resolved {
-        log::warn!("get_live_game: could not resolve local player team (sid={:?}, name='{}') — defaulting to team_one", my_summoner_id, my_name);
+        log::warn!("get_live_game: could not resolve local player team (puuid='{}', sid={:?}, name='{}'), defaulting to team_one", my_puuid, my_summoner_id, my_name);
     }
 
     // Mark enemy teams before merging

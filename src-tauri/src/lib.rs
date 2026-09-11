@@ -1191,6 +1191,40 @@ async fn view_player_profile(puuid: String) -> Result<PlayerProfile, String> {
     })
 }
 
+/// Fetch recent histories for several players without exposing or embedding an API key.
+/// Individual failures return an empty history so one unavailable profile does not block
+/// the expanded match review for the other players.
+#[tauri::command]
+async fn get_player_histories(
+    puuids: Vec<String>,
+) -> Result<std::collections::HashMap<String, Vec<models::MatchHistoryEntry>>, String> {
+    let creds = lcu::read_lockfile().ok_or("League client not found")?;
+    let mut requests = tokio::task::JoinSet::new();
+
+    for puuid in puuids.into_iter().filter(|puuid| !puuid.is_empty()) {
+        let player_creds = creds.clone();
+        requests.spawn(async move {
+            let history = tokio::time::timeout(
+                std::time::Duration::from_secs(4),
+                lcu::get_player_match_history(&player_creds, &puuid),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default();
+            (puuid, history)
+        });
+    }
+
+    let mut histories = std::collections::HashMap::new();
+    while let Some(result) = requests.join_next().await {
+        if let Ok((puuid, history)) = result {
+            histories.insert(puuid, history);
+        }
+    }
+    Ok(histories)
+}
+
 #[tauri::command]
 async fn view_match_details(
     game_id: i64,
@@ -1584,6 +1618,7 @@ pub fn run() {
             pick_champion,
             ban_champion,
             view_player_profile,
+            get_player_histories,
             view_match_details,
             get_match_details_preview,
             back_to_lobby,

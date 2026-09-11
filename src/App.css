@@ -91,9 +91,9 @@
 .header-left { display: flex; align-items: center; gap: 10px; padding-left: 60px; }
 .logo {
   width: 28px; height: 28px; border-radius: 6px;
-  background: linear-gradient(135deg, var(--accent-gold), var(--accent-gold-dim));
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 14px; color: #0a0e13;
+  background: transparent;
+  display: block;
+  object-fit: contain;
 }
 .app-title { font-size: 15px; font-weight: 700; }
 .header-right { display: flex; align-items: center; gap: 10px; -webkit-app-region: no-drag; }
@@ -1397,6 +1397,7 @@
   margin-bottom: 9px;
 }
 .mh-expanded-header > div { display: flex; flex-direction: column; }
+.mh-expanded-header > .mh-expanded-actions { flex-direction: row; }
 .mh-expanded-header strong { color: var(--accent-gold); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; }
 .mh-expanded-header span { color: var(--text-muted); font-size: 9px; }
 .mh-expanded-header .btn {
@@ -1418,6 +1419,15 @@
   color: var(--text-primary);
 }
 .mh-expanded-header .mh-back-profile:hover { border-color: var(--text-secondary); background: rgba(255, 255, 255, 0.06); }
+.mh-badge-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -3px 0 8px;
+}
+.mh-badge-legend .profile-label { font-size: 7px; }
 .mh-record-note {
   color: var(--text-muted);
   font-size: 8px;
@@ -1430,6 +1440,7 @@
   gap: 9px;
 }
 .mh-performance-team {
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1450,7 +1461,7 @@
 .mh-performance-head,
 .mh-performance-row {
   display: grid;
-  grid-template-columns: 28px minmax(142px, 1.25fr) 58px 42px minmax(125px, 1fr);
+  grid-template-columns: 28px minmax(142px, 1fr) 58px 42px 30px;
   align-items: center;
   gap: 7px;
 }
@@ -1467,7 +1478,12 @@
   border-top: 1px solid var(--border);
 }
 .mh-performance-row {
-  min-height: 43px;
+  min-height: 72px;
+  grid-template-areas:
+    "place player kda cs score"
+    "badges badges badges badges badges";
+  grid-template-rows: auto auto;
+  row-gap: 5px;
   padding: 5px 7px;
   border-top: 1px solid rgba(255, 255, 255, 0.04);
   color: var(--text-secondary);
@@ -1480,6 +1496,10 @@
   box-shadow: inset 2px 0 var(--accent-gold);
 }
 .mh-performance-place { color: var(--text-secondary); font-size: 10px; font-weight: 850; }
+.mh-performance-row > .mh-performance-place { grid-area: place; }
+.mh-performance-row > .mh-performance-player { grid-area: player; }
+.mh-performance-row > .mh-performance-kda { grid-area: kda; }
+.mh-performance-row > :nth-child(4) { grid-area: cs; }
 .mh-performance-place-1 { color: #efc35d; }
 .mh-performance-place-2 { color: #c3cfdb; }
 .mh-performance-place-3 { color: #c78b58; }
@@ -1495,16 +1515,32 @@
 .mh-performance-player span { font-size: 8px; }
 .mh-performance-items { display: flex; gap: 2px; margin-top: 2px; }
 .mh-performance-kda { color: var(--text-primary); font-weight: 700; }
-.mh-performance-score { display: flex; align-items: flex-start; min-width: 0; gap: 6px; }
+.mh-performance-score {
+  display: contents;
+}
 .mh-performance-score > strong {
-  width: 24px;
-  flex-shrink: 0;
+  grid-area: score;
+  width: 100%;
   color: var(--accent-gold);
   font-size: 11px;
   text-align: right;
 }
-.mh-performance-score .mh-row-badges { gap: 3px; flex-wrap: wrap; overflow: visible; }
-.mh-performance-score .profile-label { font-size: 7px; padding: 1px 4px; }
+.mh-performance-score .mh-row-badges {
+  grid-area: badges;
+  min-width: 0;
+  align-content: flex-start;
+  padding-left: 35px;
+  gap: 3px;
+  flex-wrap: wrap;
+  overflow: visible;
+}
+.mh-performance-score .mh-row-badges .tt-wrap { max-width: none; }
+.mh-performance-score .profile-label {
+  padding: 1px 4px;
+  font-size: 7px;
+  white-space: nowrap;
+  text-align: center;
+}
 .mh-score-note {
   margin-top: 7px;
   color: var(--text-muted);
@@ -3802,8 +3838,8 @@
   padding: 5px 0;
   border-bottom-color: rgba(255, 255, 255, 0.045);
 }
-.header-left { gap: 7px; padding-left: 50px; }
-.logo { width: 21px; height: 21px; border-radius: 4px; font-size: 11px; }
+.header-left { gap: 7px; padding-left: 76px; }
+.logo { width: 24px; height: 24px; border-radius: 0; }
 .app-title { font-size: 12px; }
 .header-right { gap: 7px; }
 .status-dot { width: 5px; height: 5px; }
@@ -4006,18 +4042,17 @@
   gap: 12px;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-row {
-  min-height: 52px;
+  min-height: 76px;
   font-size: 10px;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-head,
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-row {
-  grid-template-columns: 28px minmax(130px, 1fr) 55px 44px minmax(195px, 1.3fr);
+  grid-template-columns: 28px minmax(160px, 1fr) 55px 44px 32px;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-player strong { font-size: 11px; }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-player span { font-size: 9px; }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score { width: 100%; }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score .mh-row-badges {
-  flex: 1 1 0;
   min-width: 0;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score .profile-label {

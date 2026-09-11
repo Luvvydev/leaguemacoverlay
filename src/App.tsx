@@ -4,6 +4,7 @@ import { parseItemStats, emptyItemStats, type ItemStats } from "./itemStats";
 import { listen } from "@tauri-apps/api/event";
 // getCurrentWebviewWindow is used in main.tsx for overlay detection
 import "./App.css";
+import appIconUrl from "../src-tauri/icons/icon.png";
 import { rankValue, dailySoloLp, historyLabels, availablePaths, choosePath, componentCredit, type BuildPath } from "./recommendationLogic";
 
 // --- Types ---
@@ -2616,7 +2617,7 @@ function App() {
       {/* Header */}
       <header className="header" data-tauri-drag-region>
         <div className="header-left">
-          <div className="logo">L</div>
+          <img className="logo" src={appIconUrl} alt="" aria-hidden="true" />
           <span className="app-title">LuvvyLoL</span>
         </div>
         <div className="header-right">
@@ -4263,7 +4264,7 @@ function MatchHistoryView({ history }: { history: MatchHistoryEntry[] }) {
       </div>
       <div className="mh-list">
         {visible.map((m, i) => (
-          <MatchHistoryRow key={i} match={m} />
+          <MatchHistoryRow key={i} match={m} firstGameOfDay={isFirstGameOfDay(m, history)} />
         ))}
         {!showAll && filtered.length > 10 && (
           <button className="btn-show-more" onClick={() => setShowAll(true)}>
@@ -4296,7 +4297,26 @@ function percentile(values: number[], value: number, lowerIsBetter = false): num
   return (below + Math.max(0, equal - 1) * 0.5) / (values.length - 1);
 }
 
-function performanceRanking(stats: PostGameStats): PerformanceRow[] {
+function sameLocalDay(a: number, b: number): boolean {
+  const first = new Date(a);
+  const second = new Date(b);
+  return first.getFullYear() === second.getFullYear()
+    && first.getMonth() === second.getMonth()
+    && first.getDate() === second.getDate();
+}
+
+function isFirstGameOfDay(match: MatchHistoryEntry, history: MatchHistoryEntry[]): boolean {
+  return !history.some(candidate => candidate.game_id !== match.game_id
+    && sameLocalDay(candidate.timestamp, match.timestamp)
+    && candidate.timestamp < match.timestamp);
+}
+
+function performanceRanking(
+  stats: PostGameStats,
+  match: MatchHistoryEntry,
+  playerHistories: Record<string, MatchHistoryEntry[]>,
+  localFirstGameOfDay = false,
+): PerformanceRow[] {
   const entries = stats.teams.flatMap((team, teamIndex) => team.players.map(player => ({ player, won: team.is_winner, teamIndex })));
   const minutes = Math.max(1, stats.game_duration_secs / 60);
   const kdas = entries.map(({ player }) => matchKda(player.kills, player.deaths, player.assists));
@@ -4326,7 +4346,7 @@ function performanceRanking(stats: PostGameStats): PerformanceRow[] {
       : isJungle
         ? metrics.kda * 20 + metrics.damage * 15 + metrics.participation * 20 + metrics.gold * 12 + metrics.farm * 12 + metrics.vision * 10 + metrics.survival * 11
         : metrics.kda * 22 + metrics.damage * 20 + metrics.participation * 15 + metrics.gold * 15 + metrics.farm * 15 + metrics.vision * 5 + metrics.survival * 8;
-    return { ...entry, score };
+    return { ...entry, score, metrics };
   }).sort((a, b) => b.score - a.score);
 
   const maxDamage = Math.max(...entries.map(entry => entry.player.total_damage), 0);
@@ -4337,78 +4357,218 @@ function performanceRanking(stats: PostGameStats): PerformanceRow[] {
     const place = index + 1;
     const player = entry.player;
     const role = player.position.toUpperCase();
+    const isSupport = role === "UTILITY" || role === "SUPPORT";
+    const isJungle = role === "JUNGLE";
     const csPerMinute = player.cs / minutes;
     const visionPerMinute = player.vision_score / minutes;
-    const badges: ProfileLabel[] = [];
+    const kda = matchKda(player.kills, player.deaths, player.assists);
+    const history = playerHistories[player.puuid] || [];
+    const earlierGames = validProfileGames(history)
+      .filter(game => game.game_id !== match.game_id && game.timestamp < match.timestamp)
+      .sort((a, b) => b.timestamp - a.timestamp);
+    const highlights: ProfileLabel[] = [];
 
-    if (place === 1) badges.push({
+    if ((history.length > 0 && isFirstGameOfDay(match, history)) || (player.is_local && localFirstGameOfDay)) highlights.push({
+      label: "FIRST GAME TODAY",
+      description: "This was the player's earliest recorded game today.",
+      tone: "blue",
+    });
+    const earlierToday = earlierGames.filter(game => sameLocalDay(game.timestamp, match.timestamp));
+    if (entry.won && earlierToday.length > 0 && earlierToday.every(game => !game.win)) highlights.push({
+      label: "FIRST WIN TODAY",
+      description: `This win followed ${earlierToday.length} earlier loss${earlierToday.length === 1 ? "" : "es"} today.`,
+      tone: "green",
+    });
+    if (entry.won && earlierGames[0] && !earlierGames[0].win) highlights.push({
+      label: "BOUNCE BACK",
+      description: "Won immediately after a loss.",
+      tone: "green",
+    });
+    let resultStreak = 1;
+    for (const earlier of earlierGames) {
+      if (earlier.win !== entry.won) break;
+      resultStreak++;
+    }
+    if (resultStreak >= 3) highlights.push({
+      label: entry.won ? `${resultStreak} WIN STREAK` : `${resultStreak} LOSS STREAK`,
+      description: `${resultStreak} consecutive ${entry.won ? "wins" : "losses"}, including this match.`,
+      tone: entry.won ? "green" : "red",
+    });
+    const earlierChampionGames = earlierGames.filter(game => game.champion_id === player.champion_id);
+    if (earlierChampionGames.length >= 3) highlights.push({
+      label: "COMFORT PICK",
+      description: `${earlierChampionGames.length} earlier recent games on this champion.`,
+      tone: "green",
+    });
+    if (earlierGames.length >= 5 && earlierChampionGames.length === 0) highlights.push({
+      label: "NEW PICK",
+      description: "No earlier game on this champion appears in the fetched recent history.",
+      tone: "blue",
+    });
+    const recentMainRole = earlierGames.length >= 5 ? inferMainRole(earlierGames).role : "";
+    if (recentMainRole && recentMainRole !== role) highlights.push({
+      label: "OFF ROLE",
+      description: `Played ${POSITION_LABELS[player.position] || role} instead of the recent main role, ${POSITION_LABELS[recentMainRole] || recentMainRole}.`,
+      tone: "blue",
+    });
+
+    if (place === 1) highlights.push({
       label: "MVP",
       description: `Ranked #1 of 10 with a ${entry.score.toFixed(0)} LuvvyScore.`,
       tone: "gold",
     });
-    if (!entry.won && (place <= 3 || entry.score >= 72)) badges.push({
+    if (!entry.won && (place <= 3 || entry.score >= 72)) highlights.push({
       label: "UNLUCKY",
       description: `Ranked #${place} overall with a ${entry.score.toFixed(0)} LuvvyScore despite the loss.`,
       tone: "purple",
     });
-    const csThreshold = role === "JUNGLE" ? 7 : role === "UTILITY" || role === "SUPPORT" ? Number.POSITIVE_INFINITY : 8;
-    if (csPerMinute >= csThreshold) badges.push({
+    if (!entry.won && place <= 5 && entry.score >= 52 && !(place <= 3 || entry.score >= 72)) highlights.push({
+      label: "BRIGHT SPOT",
+      description: `Ranked #${place} overall in a loss with a ${entry.score.toFixed(0)} LuvvyScore.`,
+      tone: "purple",
+    });
+    const csThreshold = isJungle ? 7 : isSupport ? Number.POSITIVE_INFINITY : 8;
+    if (csPerMinute >= csThreshold) highlights.push({
       label: "CS GOD",
       description: `${csPerMinute.toFixed(1)} CS per minute, above the ${csThreshold.toFixed(1)} threshold for ${role || "this role"}.`,
-      tone: "blue",
+      tone: "gold",
     });
-    if (player.total_damage === maxDamage && maxDamage > 0) badges.push({
+    if (player.total_damage === maxDamage && maxDamage > 0) highlights.push({
       label: "DAMAGE CARRY",
       description: `${formatNumber(player.total_damage)} champion damage, the most in this match.`,
-      tone: "red",
+      tone: "gold",
     });
-    if (matchKda(player.kills, player.deaths, player.assists) === maxKda && maxKda >= 4) badges.push({
+    if (kda === maxKda && maxKda >= 4) highlights.push({
       label: "KDA KING",
       description: `${maxKda.toFixed(1)} KDA, the highest in this match.`,
-      tone: "green",
+      tone: "gold",
     });
-    if (visionPerMinute >= (role === "UTILITY" || role === "SUPPORT" ? 2 : 1.2)) badges.push({
+    if (visionPerMinute >= (isSupport ? 2 : 1.2)) highlights.push({
       label: "VISIONARY",
       description: `${visionPerMinute.toFixed(1)} vision score per minute.`,
-      tone: "blue",
+      tone: "green",
     });
-    if (player.kill_participation >= 0.7) badges.push({
+    if (player.kill_participation >= 0.7) highlights.push({
       label: "TEAM PLAYER",
       description: `${Math.round(player.kill_participation * 100)}% kill participation.`,
       tone: "green",
     });
-    if (player.gold_earned === maxGold && maxGold > 0) badges.push({
+    if (player.gold_earned === maxGold && maxGold > 0) highlights.push({
       label: "MILLIONAIRE",
       description: `${formatNumber(player.gold_earned)} gold, the most earned in this match.`,
       tone: "gold",
     });
-    if (player.damage_taken === maxDamageTaken && maxDamageTaken > 0) badges.push({
+    if (player.damage_taken === maxDamageTaken && maxDamageTaken > 0) highlights.push({
       label: "FRONTLINE",
       description: `${formatNumber(player.damage_taken)} damage taken, the most in this match.`,
-      tone: "orange",
+      tone: "green",
     });
-    if (player.wards_killed >= 5) badges.push({
+    if (player.wards_killed >= 4) highlights.push({
       label: "WARD HUNTER",
       description: `${player.wards_killed} enemy wards cleared.`,
       tone: "green",
     });
-    if (player.penta_kills > 0 || player.quadra_kills > 0 || player.triple_kills > 0) badges.push({
+    if (player.wards_placed >= Math.max(5, Math.floor(minutes / 4))) highlights.push({
+      label: "VISION SETTER",
+      description: `${player.wards_placed} wards placed in ${minutes.toFixed(0)} minutes.`,
+      tone: "green",
+    });
+    if (player.penta_kills > 0 || player.quadra_kills > 0 || player.triple_kills > 0) highlights.push({
       label: player.penta_kills > 0 ? "PENTAKILL" : player.quadra_kills > 0 ? "QUADRAKILL" : "TRIPLEKILL",
       description: player.penta_kills > 0 ? "Scored a pentakill." : player.quadra_kills > 0 ? "Scored a quadrakill." : "Scored a triplekill.",
-      tone: "purple",
+      tone: player.penta_kills > 0 ? "gold" : "green",
     });
-    if (player.deaths <= 2 && player.kills + player.assists >= 10) badges.push({
+    if (player.deaths <= 2 && player.kills + player.assists >= 10) highlights.push({
       label: "SURVIVOR",
       description: `${player.kills + player.assists} takedowns with only ${player.deaths} deaths.`,
-      tone: "blue",
+      tone: "green",
+    });
+    if (player.damage_share >= 0.25 && player.total_damage !== maxDamage) highlights.push({
+      label: "DAMAGE THREAT",
+      description: `${Math.round(player.damage_share * 100)}% of the team's champion damage.`,
+      tone: "green",
+    });
+    if (kda >= 4 && kda !== maxKda) highlights.push({
+      label: "HIGH KDA",
+      description: `${kda.toFixed(1)} KDA in this match.`,
+      tone: "green",
+    });
+    if (player.deaths >= 8) highlights.push({
+      label: "TOO MANY DEATHS",
+      description: `${player.deaths} deaths gave the enemy repeated chances to extend its lead.`,
+      tone: "red",
+    });
+    if (kda < 1.3 && player.deaths >= 4) highlights.push({
+      label: "LOW KDA",
+      description: `${kda.toFixed(1)} KDA. Look for safer fights and more tradeable deaths.`,
+      tone: "red",
+    });
+    if (player.kill_participation < 0.35) highlights.push({
+      label: "LOW IMPACT",
+      description: `${Math.round(player.kill_participation * 100)}% kill participation. Join more high value fights.`,
+      tone: "red",
+    });
+    const lowFarmThreshold = isJungle ? 4.2 : 5;
+    if (!isSupport && minutes >= 15 && csPerMinute < lowFarmThreshold) highlights.push({
+      label: "LOW FARM",
+      description: `${csPerMinute.toFixed(1)} CS per minute, below the ${lowFarmThreshold.toFixed(1)} improvement target for ${role || "this role"}.`,
+      tone: "red",
+    });
+    const lowVisionThreshold = isSupport ? 0.8 : isJungle ? 0.45 : 0.25;
+    if (minutes >= 15 && visionPerMinute < lowVisionThreshold) highlights.push({
+      label: "LOW VISION",
+      description: `${visionPerMinute.toFixed(1)} vision score per minute, below the ${lowVisionThreshold.toFixed(2)} improvement target for ${role || "this role"}.`,
+      tone: "red",
+    });
+    if (!isSupport && entry.metrics.damage <= 0.15) highlights.push({
+      label: "LOW DAMAGE",
+      description: `${Math.round(player.damage_share * 100)}% team damage, near the bottom of this match.`,
+      tone: "red",
     });
 
-    return { ...entry, score: Math.round(entry.score), place, badges: badges.slice(0, 4) };
+    const scoreBadge: ProfileLabel = entry.score >= 88
+      ? { label: "DOMINANT", description: `${entry.score.toFixed(0)} LuvvyScore, an exceptional role adjusted game.`, tone: "gold" }
+      : entry.score >= 68
+        ? { label: "GREAT GAME", description: `${entry.score.toFixed(0)} LuvvyScore, well above the match average.`, tone: "green" }
+        : entry.score >= 50
+          ? { label: "SOLID GAME", description: `${entry.score.toFixed(0)} LuvvyScore, a useful overall contribution.`, tone: "green" }
+          : entry.score >= 34
+            ? { label: "MIXED GAME", description: `${entry.score.toFixed(0)} LuvvyScore with useful moments and clear improvement areas.`, tone: "purple" }
+            : { label: "ROOM TO GROW", description: `${entry.score.toFixed(0)} LuvvyScore. The red badges identify the clearest improvement targets.`, tone: "red" };
+    const roleLabel = POSITION_LABELS[player.position] || player.position || "Role unknown";
+    const basics: ProfileLabel[] = [
+      { label: entry.won ? "VICTORY" : "DEFEAT", description: entry.won ? "Won this match." : "Lost this match.", tone: entry.won ? "green" : "red" },
+      scoreBadge,
+      { label: roleLabel.toUpperCase(), description: `Played ${roleLabel} in this match.`, tone: "blue" },
+    ];
+    const highlightPriority: Record<ProfileLabel["tone"], number> = {
+      gold: 1,
+      red: 2,
+      purple: 3,
+      green: 4,
+      blue: 5,
+      orange: 6,
+      muted: 7,
+    };
+    highlights.sort((a, b) => {
+      if (a.label === "FIRST GAME TODAY") return -1;
+      if (b.label === "FIRST GAME TODAY") return 1;
+      return highlightPriority[a.tone] - highlightPriority[b.tone];
+    });
+    const badges = [...highlights.slice(0, 6), ...basics]
+      .filter((badge, badgeIndex, all) => all.findIndex(candidate => candidate.label === badge.label) === badgeIndex);
+
+    return { ...entry, score: Math.round(entry.score), place, badges };
   });
 }
 
-function compactMatchBadges(match: MatchHistoryEntry): ProfileLabel[] {
+function compactMatchBadges(match: MatchHistoryEntry, firstGameOfDay = false): ProfileLabel[] {
   const badges: ProfileLabel[] = [];
+  if (firstGameOfDay) badges.push({
+    label: "FIRST GAME TODAY",
+    description: "This was your earliest recorded game today.",
+    tone: "blue",
+  });
   if (isCustomMatch(match)) badges.push({
     label: "CUSTOM",
     description: "Shown in match history but excluded from records, streaks, and profile averages.",
@@ -4432,21 +4592,23 @@ function compactMatchBadges(match: MatchHistoryEntry): ProfileLabel[] {
     description: `${matchKda(match.kills, match.deaths, match.assists).toFixed(1)} KDA in this match.`,
     tone: "green",
   });
-  return badges.slice(0, 2);
+  return badges.slice(0, 3);
 }
 
-function ExpandedMatchPreview({ match, details, loading, error, onClose }: {
+function ExpandedMatchPreview({ match, details, playerHistories, loading, error, firstGameOfDay, onClose }: {
   match: MatchHistoryEntry;
   details: PostGameStats | null;
+  playerHistories: Record<string, MatchHistoryEntry[]>;
   loading: boolean;
   error: string | null;
+  firstGameOfDay: boolean;
   onClose: () => void;
 }) {
   if (loading) return <div className="mh-expanded-state"><span className="mh-detail-spinner" /> Loading ten player performance...</div>;
   if (error) return <div className="mh-expanded-state mh-expanded-error">Could not load match details: {error}</div>;
   if (!details) return null;
 
-  const rows = performanceRanking(details);
+  const rows = performanceRanking(details, match, playerHistories, firstGameOfDay);
   const minutes = Math.max(1, details.game_duration_secs / 60);
   return (
     <div className="mh-expanded" onClick={event => event.stopPropagation()}>
@@ -4462,6 +4624,12 @@ function ExpandedMatchPreview({ match, details, loading, error, onClose }: {
           </button>
         </div>
       </div>
+      <div className="mh-badge-legend" aria-label="Badge color meanings">
+        <span className="profile-label profile-label-gold">EXCEPTIONAL</span>
+        <span className="profile-label profile-label-green">STRENGTH</span>
+        <span className="profile-label profile-label-red">IMPROVE</span>
+        <span className="profile-label profile-label-blue">CONTEXT</span>
+      </div>
       <div className="mh-performance-teams">
         {details.teams.map((team, teamIndex) => {
           const teamRows = rows.filter(row => row.teamIndex === teamIndex).sort((a, b) => a.place - b.place);
@@ -4473,7 +4641,7 @@ function ExpandedMatchPreview({ match, details, loading, error, onClose }: {
                 <span>{teamRows.reduce((sum, row) => sum + row.player.kills, 0)} team kills</span>
               </div>
               <div className="mh-performance-head">
-                <span>#</span><span>Player</span><span>KDA</span><span>CS/min</span><span>Score and badges</span>
+                <span>#</span><span>Player</span><span>KDA</span><span>CS/min</span><span>Score</span>
               </div>
               <div className="mh-performance-list">
                 {teamRows.map((row, rowIndex) => (
@@ -4509,15 +4677,16 @@ function ExpandedMatchPreview({ match, details, loading, error, onClose }: {
   );
 }
 
-function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
+function MatchHistoryRow({ match: m, firstGameOfDay }: { match: MatchHistoryEntry; firstGameOfDay: boolean }) {
   const champInfo = useChampionName(m.champion_id);
   const kda = m.deaths === 0 ? "Perfect" : ((m.kills + m.assists) / m.deaths).toFixed(1);
   const mins = Math.floor(m.duration_secs / 60);
   const ago = timeAgo(m.timestamp);
   const total = m.kills + m.deaths + m.assists || 1;
-  const badges = compactMatchBadges(m);
+  const badges = compactMatchBadges(m, firstGameOfDay);
   const [expanded, setExpanded] = useState(false);
   const [details, setDetails] = useState<PostGameStats | null>(null);
+  const [playerHistories, setPlayerHistories] = useState<Record<string, MatchHistoryEntry[]>>({});
   const [loading, setLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
@@ -4528,7 +4697,13 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
     setLoading(true);
     setDetailError(null);
     try {
-      setDetails(await invoke<PostGameStats>("get_match_details_preview", { gameId: m.game_id }));
+      const preview = await invoke<PostGameStats>("get_match_details_preview", { gameId: m.game_id });
+      setDetails(preview);
+      setLoading(false);
+      const puuids = preview.teams.flatMap(team => team.players.map(player => player.puuid)).filter(Boolean);
+      invoke<Record<string, MatchHistoryEntry[]>>("get_player_histories", { puuids })
+        .then(setPlayerHistories)
+        .catch(error => console.warn("Player history badges unavailable:", error));
     } catch (error) {
       setDetailError(String(error));
     } finally {
@@ -4578,7 +4753,7 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
         <span className="mh-ago">{ago}</span>
         <span className={`mh-expand-arrow ${expanded ? "mh-expand-arrow-open" : ""}`}>⌄</span>
       </div>
-      {expanded && <ExpandedMatchPreview match={m} details={details} loading={loading} error={detailError} onClose={() => setExpanded(false)} />}
+      {expanded && <ExpandedMatchPreview match={m} details={details} playerHistories={playerHistories} loading={loading} error={detailError} firstGameOfDay={firstGameOfDay} onClose={() => setExpanded(false)} />}
     </div>
   );
 }

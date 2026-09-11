@@ -1631,6 +1631,10 @@
 }
 .lg-team-ally .lg-player { box-shadow: inset 0 2px rgba(3, 151, 171, 0.5); }
 .lg-team-enemy .lg-player { box-shadow: inset 0 2px rgba(232, 64, 87, 0.48); }
+.lg-team-ally .lg-player-local {
+  border-color: rgba(200, 155, 60, 0.72);
+  box-shadow: inset 0 2px var(--accent-gold), 0 0 0 1px rgba(200, 155, 60, 0.12);
+}
 .lg-player:hover { background: var(--bg-card-hover); }
 
 .lg-player-info { grid-area: info; min-width: 0; }
@@ -1661,6 +1665,7 @@
 .label-struggles { background: rgba(247, 173, 47, 0.16); color: #ffb84e; }
 .label-highkda { background: rgba(3, 151, 171, 0.18); color: #46cce6; }
 .label-veteran { background: rgba(200, 155, 60, 0.16); color: #efc35d; }
+.label-self { border: 1px solid var(--accent-gold); background: rgba(200, 155, 60, 0.16); color: #f0c965; }
 .lg-player-labels {
   grid-area: labels;
   display: flex;
@@ -3876,16 +3881,17 @@
   margin-left: auto;
 }
 .postgame-layout {
-  width: 88%;
+  width: 96%;
   max-width: none;
   margin-right: auto;
+  margin-left: auto;
 }
 
 /* Out of game profile */
 .profile-page-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 1.18fr) minmax(250px, 0.96fr) minmax(250px, 1fr);
-  grid-template-rows: 70px 310px minmax(190px, 1fr);
+  grid-template-columns: minmax(300px, 0.95fr) minmax(270px, 1fr) minmax(250px, 0.9fr);
+  grid-template-rows: 70px 248px minmax(252px, 1fr);
   min-height: calc(100vh - 92px);
   align-items: start;
   gap: 8px;
@@ -3914,15 +3920,15 @@
 .profile-identity-copy h2 { margin: 0 0 4px; font-size: 18px; }
 .profile-label-list-inline { min-height: 0; margin: 0; }
 .profile-label { padding: 1px 5px; border-radius: 2px; font-size: 8px; letter-spacing: 0.35px; }
-.profile-ranked-card { grid-column: 1; grid-row: 2; min-height: 310px; padding: 10px 11px 9px; }
+.profile-ranked-card { grid-column: 1; grid-row: 2; min-height: 248px; padding: 10px 11px 9px; }
 .profile-card-title { color: var(--text-secondary); font-size: 10px; letter-spacing: 0.55px; }
 .profile-ranked-main {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-start;
-  gap: 16px;
-  min-height: 246px;
-  padding: 27px 26px 0;
+  gap: 18px;
+  min-height: 184px;
+  padding: 18px 24px 8px;
 }
 .profile-ranked-main .rank-emblem { flex: 0 0 auto; margin: 0; }
 .profile-ranked-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
@@ -4042,7 +4048,7 @@
   gap: 12px;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-row {
-  min-height: 76px;
+  min-height: 82px;
   font-size: 10px;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-head,
@@ -4053,7 +4059,11 @@
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-player span { font-size: 9px; }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score { width: 100%; }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score .mh-row-badges {
+  width: 100%;
   min-width: 0;
+  margin-left: 0;
+  flex-wrap: wrap;
+  overflow: visible;
 }
 .profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score .profile-label {
   padding: 2px 5px;
@@ -4070,7 +4080,7 @@
 .cs-main {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
-  grid-template-rows: max-content max-content;
+  grid-template-rows: minmax(170px, max-content) minmax(170px, max-content);
   position: relative;
   align-content: start;
   gap: 6px 8px;
@@ -4088,11 +4098,11 @@
   overflow-x: hidden;
   overflow-y: auto;
 }
-.cs-team { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
+.cs-team { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .cs-team-label { display: none; }
 .cs-player {
   min-width: 0;
-  min-height: 112px;
+  min-height: 166px;
   margin: 0;
   padding: 7px 6px;
   flex-direction: column;
@@ -4104,6 +4114,26 @@
 .cs-right .cs-player { border-top-color: var(--accent-red); }
 .cs-right .cs-team { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
 .cs-right .cs-player { width: calc(20% - 3px); }
+.cs-player-empty-slot {
+  align-items: center;
+  justify-content: center;
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.012);
+  color: var(--text-muted);
+  font-size: 9px;
+  text-align: center;
+}
+.cs-slot-number {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 800;
+}
 .cs-player > .champ-icon, .cs-player > .champ-icon-empty { width: 32px !important; height: 32px !important; }
 .cs-player-info .draft-champ-name { font-size: 11px; }
 .cs-player-pos { display: block; margin-top: 3px; font-size: 9px; }
@@ -4129,7 +4159,7 @@
 /* Post match: one comparison board, one chart rail, one compact metric panel. */
 .postgame-layout { padding-bottom: 6px; }
 .postgame-title-row { margin-bottom: 6px; }
-.postgame-dashboard { display: grid; grid-template-columns: minmax(0, 1fr) 250px; align-items: start; gap: 8px; }
+.postgame-dashboard { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 0.38fr); align-items: start; gap: 10px; }
 .postgame-versus-board,
 .postgame-damage-card,
 .postgame-metrics,
@@ -4183,23 +4213,23 @@
 .postgame-compact-items .tt-wrap { width: 24px; height: 24px; overflow: hidden; }
 .postgame-compact-player .mvp-badge { padding: 0 3px; font-size: 7px; }
 .postgame-sidebar { display: flex; flex-direction: column; gap: 8px; }
-.postgame-sidebar .gold-timeline-panel { height: 180px; margin: 0; padding: 10px; }
+.postgame-sidebar .gold-timeline-panel { height: 205px; margin: 0; padding: 12px; }
 .postgame-sidebar .gold-timeline-header { margin-bottom: 3px; }
 .postgame-sidebar .gold-timeline-stats { display: none; }
-.postgame-sidebar .gold-timeline-svg { height: 132px; }
-.postgame-damage-card { height: 180px; padding: 10px; }
+.postgame-sidebar .gold-timeline-svg { height: 154px; }
+.postgame-damage-card { height: 205px; padding: 12px; }
 .postgame-damage-card h4 { color: var(--text-secondary); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-.postgame-damage-bars { display: flex; align-items: flex-end; gap: 3px; height: 143px; padding-top: 8px; }
+.postgame-damage-bars { display: flex; align-items: flex-end; gap: 5px; height: 166px; padding-top: 8px; }
 .postgame-damage-column { display: flex; flex: 1; height: 100%; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; }
 .postgame-damage-column > span { width: 72%; min-height: 8px; }
 .postgame-damage-column .damage-win { background: rgba(56, 169, 199, 0.78); }
 .postgame-damage-column .damage-loss { background: rgba(221, 90, 104, 0.78); }
 .postgame-damage-column .champ-icon { border-radius: 1px; }
-.postgame-metrics { width: calc(100% - 258px); margin-top: 8px; padding: 0 9px 9px; }
+.postgame-metrics { width: calc(100% - 322px); margin-top: 10px; padding: 0 12px 12px; }
 .postgame-metric-tabs { display: flex; gap: 17px; height: 32px; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.055); color: var(--text-muted); font-size: 10px; }
 .postgame-metric-tabs strong { height: 30px; padding-top: 9px; border-bottom: 2px solid var(--accent-blue); color: var(--text-primary); }
-.postgame-metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; padding: 12px 4px 4px; }
-.postgame-metric-grid .profile-stat-ring { width: 58px; height: 58px; }
+.postgame-metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px 12px; padding: 16px 8px 6px; }
+.postgame-metric-grid .profile-stat-ring { width: 66px; height: 66px; }
 .postgame-metric-grid .profile-stat-ring-inner { font-size: 13px; }
 .postgame-metric-grid .profile-stat-ring-wrap { font-size: 9px; }
 
@@ -4230,8 +4260,8 @@
   .cs-main { grid-template-columns: minmax(0, 1fr) 260px; }
   .cs-center { width: 260px; }
   .champ-select-layout .cs-recs-bar { width: calc(100% - 268px); }
-  .postgame-dashboard { grid-template-columns: minmax(0, 1fr) 220px; }
-  .postgame-metrics { width: calc(100% - 228px); }
+  .postgame-dashboard { grid-template-columns: minmax(0, 1fr) 260px; }
+  .postgame-metrics { width: calc(100% - 270px); }
   .postgame-compact-score span { display: none; }
   .postgame-compact-items .tt-wrap:nth-child(n+5) { display: none; }
 }

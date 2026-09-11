@@ -2822,13 +2822,18 @@ function App() {
               {state.draft && (
                 <div className="cs-team">
                   <h4 className="cs-team-label cs-team-ally">Your Team</h4>
-                  {state.draft.allies.map((p, i) => (
+                  {Array.from({ length: 5 }, (_, i) => state.draft!.allies[i] ?? null).map((p, i) => p ? (
                     <div key={i} className={`cs-player ${p.is_local ? "cs-player-local" : ""}`}>
                       <ChampionIcon championId={p.champion_id} size={36} />
                       <div className="cs-player-info">
-                        <ChampionNameLabel championId={p.champion_id} fallback={p.is_local ? "You" : "..."} />
+                        <ChampionNameLabel championId={p.champion_id} fallback={p.is_local ? "You" : "Waiting for pick"} />
                         {p.position && <span className="cs-player-pos"><PositionIcon pos={p.position} size={12} /> {POSITION_LABELS[p.position] || p.position.toUpperCase()}</span>}
                       </div>
+                    </div>
+                  ) : (
+                    <div key={`ally-slot-${i}`} className="cs-player cs-player-empty-slot" aria-label={`Open ally slot ${i + 1}`}>
+                      <span className="cs-slot-number">{i + 1}</span>
+                      <span>Waiting for pick</span>
                     </div>
                   ))}
                   {state.draft.ally_bans.length > 0 && (
@@ -3133,7 +3138,13 @@ function App() {
             {state.draft && (
               <div className="cs-team">
                 <h4 className="cs-team-label cs-team-enemy">Enemy Team</h4>
-                {state.draft.enemies.filter(p => p.champion_id > 0).map((p, i) => {
+                {Array.from({ length: 5 }, (_, i) => state.draft!.enemies.filter(p => p.champion_id > 0)[i] ?? null).map((p, i) => {
+                  if (!p) return (
+                    <div key={`enemy-slot-${i}`} className="cs-player cs-player-empty-slot" aria-label={`Open enemy slot ${i + 1}`}>
+                      <span className="cs-slot-number">{i + 1}</span>
+                      <span>Waiting for pick</span>
+                    </div>
+                  );
                   const realWr = hasChampion && p.champion_id > 0 ? state.counters[p.champion_id.toString()] : undefined;
                   const wr = realWr;
                   const estimated = realWr === undefined && hasChampion && p.champion_id > 0
@@ -4080,7 +4091,7 @@ function LobbyProfileOverview({ name, profileIconId, ranked, history }: {
       <div className="profile-ranked-card">
         <span className="profile-card-title">PERSONAL RATING</span>
         <div className="profile-ranked-main">
-          <RankEmblem rank={ranked?.tier || ""} size={88} />
+          <RankEmblem rank={ranked?.tier || ""} size={104} />
           <div className="profile-ranked-copy">
             <strong>{rankText}</strong>
             <span>{ranked && ranked.tier !== "UNRANKED" ? `${ranked.lp} LP` : "No ranked games"}</span>
@@ -5348,13 +5359,13 @@ function SpellStaticIcon({ spellId }: { spellId: number }) {
 // Distinct colors for inferred premade groups (party indicators), Blitz-style.
 const PREMADE_COLORS = ["#3fb950", "#d29922", "#a371f7", "#f778ba", "#58a6ff"];
 
-function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void; isEnemy?: boolean; spellCd?: SpellCdProps }) {
+function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, isLocal, spellCd }: { p: LiveGamePlayer; onViewPlayer?: (puuid: string) => void; isEnemy?: boolean; isLocal?: boolean; spellCd?: SpellCdProps }) {
   const totalGames = p.ranked_wins + p.ranked_losses;
   const champWr = p.champ_games > 0 ? (p.champ_wins / p.champ_games * 100) : 0;
   const live = p.live;
   const labels = getPlayerLabels(p);
   return (
-    <div className="lg-player" onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
+    <div className={`lg-player ${isLocal ? "lg-player-local" : ""}`} onClick={() => onViewPlayer?.(p.puuid)} style={{ cursor: p.puuid ? "pointer" : "default" }}>
       <div className="lg-champ-col">
         <ChampionIcon championId={p.champion_id} size={40} />
         {live && <span className="lg-level">{live.level}</span>}
@@ -5408,8 +5419,9 @@ function LiveGamePlayerCard({ p, onViewPlayer, isEnemy, spellCd }: { p: LiveGame
           )}
         </div>
       )}
-      {labels.length > 0 && (
+      {(isLocal || labels.length > 0) && (
         <div className="lg-player-labels">
+          {isLocal && <span className="player-label label-self" title="This is your player card.">YOU</span>}
           {labels.map((label, index) => (
             <span key={`${label.text}-${index}`} className={`player-label ${label.cls}`} title={label.title}>{label.text}</span>
           ))}
@@ -5561,17 +5573,16 @@ function LiveGameView({ game, summonerPuuid, summonerName, onViewPlayer, buildPa
   // Find local player
   const localName = (summonerName ?? "").trim().toLowerCase();
   const localNameShort = localName.split("#")[0];
-  const localPlayer = summonerPuuid
-    ? game.allies.find(p => p.puuid === summonerPuuid)
-    : localNameShort
-      ? game.allies.find(p => {
-          const playerName = p.summoner_name.trim().toLowerCase();
-          return playerName === localName
-            || playerName === localNameShort
-            || playerName.startsWith(localNameShort + "#")
-            || playerName.split("#")[0] === localNameShort;
-        })
-      : undefined;
+  const localPlayerByName = localNameShort
+    ? game.allies.find(p => {
+        const playerName = p.summoner_name.trim().toLowerCase();
+        return playerName === localName
+          || playerName === localNameShort
+          || playerName.startsWith(localNameShort + "#")
+          || playerName.split("#")[0] === localNameShort;
+      })
+    : undefined;
+  const localPlayer = (summonerPuuid ? game.allies.find(p => p.puuid === summonerPuuid) : undefined) || localPlayerByName;
   const localLive = localPlayer?.live;
   const pathState = resolveBuildPath(game, localPlayer, buildPath);
   const build = pathState.build;
@@ -5676,7 +5687,7 @@ function LiveGameView({ game, summonerPuuid, summonerName, onViewPlayer, buildPa
             </div>
             <div className="lg-team-grid">
               {sortByPosition(game.allies).map((p, i) => (
-                <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} />
+                <LiveGamePlayerCard key={i} p={p} onViewPlayer={onViewPlayer} isLocal={p === localPlayer} />
               ))}
             </div>
           </section>

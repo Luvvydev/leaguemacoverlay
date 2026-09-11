@@ -2735,29 +2735,40 @@ function App() {
       {/* Waiting / Match History */}
       {isConnected && !inChampSelect && !inGame && !inPostGame && (
         <section className="section-lobby">
-          <LobbyProfileOverview
-            name={state.summoner_name || "Summoner"}
-            profileIconId={state.profile_icon_id}
-            ranked={state.ranked}
-            history={state.match_history}
-          />
           {state.match_history.length > 0 ? (
             <>
-              <DailySummary history={state.match_history} lpHistory={state.lp_history} />
-              <TiltGate history={state.match_history} />
-              <div className="profile-dashboard-grid">
+              <div className="profile-page-grid">
+                <LobbyProfileOverview
+                  name={state.summoner_name || "Summoner"}
+                  profileIconId={state.profile_icon_id}
+                  ranked={state.ranked}
+                  history={state.match_history}
+                />
                 <MatchHistoryView history={state.match_history} />
                 <ProfileChampionTable history={state.match_history} />
+                <ProfileRoleTable history={state.match_history} />
               </div>
-              <ChampionImprovement history={state.match_history} />
-              {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
-              {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
+              <div className="profile-secondary-hidden" aria-hidden="true">
+                <DailySummary history={state.match_history} lpHistory={state.lp_history} />
+                <TiltGate history={state.match_history} />
+                <ChampionImprovement history={state.match_history} />
+                {state.ranked && <ImprovementPanel history={state.match_history} ranked={state.ranked} />}
+                {state.lp_history.length >= 2 && <LpChart history={state.lp_history} />}
+              </div>
             </>
           ) : (
-            <div className="section-waiting">
-              <div className="pulse-ring" />
-              <p className="waiting-text">Waiting for champion select...</p>
-            </div>
+            <>
+              <LobbyProfileOverview
+                name={state.summoner_name || "Summoner"}
+                profileIconId={state.profile_icon_id}
+                ranked={state.ranked}
+                history={state.match_history}
+              />
+              <div className="section-waiting">
+                <div className="pulse-ring" />
+                <p className="waiting-text">Waiting for champion select...</p>
+              </div>
+            </>
           )}
         </section>
       )}
@@ -2793,7 +2804,7 @@ function App() {
                   ))}
               </div>
             </div>
-          ) : !state.champion_locked && rankedRecs.length > 0 && (
+          ) : !hasChampion && rankedRecs.length > 0 && (
             <div className="cs-recs-bar cs-recs-bar-v2">
               <span className="cs-recs-label">Recommended</span>
               <div className="cs-recs-scroll">
@@ -3121,7 +3132,7 @@ function App() {
             {state.draft && (
               <div className="cs-team">
                 <h4 className="cs-team-label cs-team-enemy">Enemy Team</h4>
-                {state.draft.enemies.length > 0 ? state.draft.enemies.map((p, i) => {
+                {state.draft.enemies.filter(p => p.champion_id > 0).map((p, i) => {
                   const realWr = hasChampion && p.champion_id > 0 ? state.counters[p.champion_id.toString()] : undefined;
                   const wr = realWr;
                   const estimated = realWr === undefined && hasChampion && p.champion_id > 0
@@ -3149,9 +3160,7 @@ function App() {
                       )}
                     </div>
                   );
-                }) : (
-                  <div className="cs-player-empty">Waiting for picks...</div>
-                )}
+                })}
 
                 {state.draft.enemy_bans.length > 0 && (
                   <div className="cs-bans">
@@ -3188,7 +3197,7 @@ function App() {
       {/* Loading overlay */}
       {profileLoading && !playerProfile && (
         <div className="profile-overlay">
-          <div className="profile-panel" style={{ textAlign: "center", padding: 48 }}>
+          <div className="profile-panel profile-loading-panel" style={{ textAlign: "center", padding: 48 }}>
             <div className="spinner" style={{ margin: "0 auto 12px" }} />
             <p className="waiting-text">Loading player profile...</p>
           </div>
@@ -4058,36 +4067,35 @@ function LobbyProfileOverview({ name, profileIconId, ranked, history }: {
           )}
         </div>
         <div className="profile-identity-copy">
-          <span className="profile-eyebrow">YOUR PROFILE</span>
           <h2>{name}</h2>
-          <div className="profile-rank-line">
-            <RankEmblem rank={ranked?.tier || ""} size={30} />
+          <div className="profile-label-list profile-label-list-inline">
+            {labels.length > 0 ? labels.slice(0, 4).map(label => <ProfileLabelChip key={label.label} badge={label} />) : (
+              <span className="profile-label-empty">Playstyle appears after a few full games.</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="profile-ranked-card">
+        <span className="profile-card-title">PERSONAL RATING</span>
+        <div className="profile-ranked-main">
+          <RankEmblem rank={ranked?.tier || ""} size={88} />
+          <div className="profile-ranked-copy">
             <strong>{rankText}</strong>
-            {ranked && ranked.tier !== "UNRANKED" && <span>{ranked.lp} LP</span>}
+            <span>{ranked && ranked.tier !== "UNRANKED" ? `${ranked.lp} LP` : "No ranked games"}</span>
             {mainRole && <span className="profile-main-role"><PositionIcon pos={mainRole} size={14} /> {POSITION_LABELS[mainRole] || mainRole}</span>}
           </div>
         </div>
-        <div className="profile-record">
-          <span className="profile-record-label">Recent record</span>
-          <strong><span className="mh-wins">{wins}W</span> <span className="mh-losses">{games.length - wins}L</span></strong>
-          <span>{games.length} tracked games</span>
+        <div className="profile-ranked-record">
+          <span><b className="mh-wins">{wins}</b> wins</span>
+          <span><b className="mh-losses">{games.length - wins}</b> losses</span>
+          <span><b>{Math.round(winRate * 100)}%</b> win rate</span>
         </div>
-      </div>
-
-      <div className="profile-summary-card">
-        <ProfileStatRing value={`${Math.round(winRate * 100)}%`} label="Win rate" progress={winRate} tone="green" />
-        <ProfileStatRing value={averageKda.toFixed(1)} label="Average KDA" progress={averageKda / 6} tone="gold" />
-        <ProfileStatRing value={csPerMinute.toFixed(1)} label="CS per minute" progress={csPerMinute / 10} tone="blue" />
-      </div>
-
-      <div className="profile-personality-card">
-        <span className="profile-card-title">YOUR PLAYSTYLE</span>
-        <div className="profile-label-list">
-          {labels.length > 0 ? labels.slice(0, 4).map(label => <ProfileLabelChip key={label.label} badge={label} />) : (
-            <span className="profile-label-empty">Play a few full games to build your profile.</span>
-          )}
+        <div className="profile-summary-card" aria-hidden="true">
+          <ProfileStatRing value={`${Math.round(winRate * 100)}%`} label="Win rate" progress={winRate} tone="green" />
+          <ProfileStatRing value={averageKda.toFixed(1)} label="Average KDA" progress={averageKda / 6} tone="gold" />
+          <ProfileStatRing value={csPerMinute.toFixed(1)} label="CS per minute" progress={csPerMinute / 10} tone="blue" />
         </div>
-        <span className="profile-hover-hint">Hover a label to see why you earned it</span>
       </div>
     </section>
   );
@@ -4140,6 +4148,43 @@ function ProfileChampionTable({ history }: { history: MatchHistoryEntry[] }) {
             </div>
           </div>
         ))}
+      </div>
+    </aside>
+  );
+}
+
+function ProfileRoleTable({ history }: { history: MatchHistoryEntry[] }) {
+  const roleRows = [...validProfileGames(history).reduce((roles, match) => {
+    const role = normalizePosition(match.position);
+    if (role === "unknown") return roles;
+    const current = roles.get(role) || { games: 0, wins: 0 };
+    current.games += 1;
+    if (match.win) current.wins += 1;
+    roles.set(role, current);
+    return roles;
+  }, new Map<string, { games: number; wins: number }>()).entries()]
+    .sort((a, b) => b[1].games - a[1].games);
+
+  return (
+    <aside className="profile-role-table">
+      <div className="profile-champion-header">
+        <div>
+          <span className="profile-card-title">RANKED ROLES</span>
+          <span className="profile-card-subtitle">Recent games</span>
+        </div>
+      </div>
+      <div className="profile-role-columns"><span>Role</span><span>Played</span><span>Win rate</span></div>
+      <div className="profile-role-list">
+        {roleRows.length > 0 ? roleRows.map(([role, stats]) => {
+          const winRate = stats.wins / stats.games;
+          return (
+            <div className="profile-role-row" key={role}>
+              <span className="profile-role-name"><PositionIcon pos={role} size={18} /> {POSITION_LABELS[role] || role}</span>
+              <strong>{stats.games}</strong>
+              <strong className={winRate >= 0.55 ? "lg-wr-good" : winRate < 0.45 ? "lg-wr-bad" : ""}>{Math.round(winRate * 100)}%</strong>
+            </div>
+          );
+        }) : <span className="profile-role-empty">No role data yet</span>}
       </div>
     </aside>
   );
@@ -4390,11 +4435,12 @@ function compactMatchBadges(match: MatchHistoryEntry): ProfileLabel[] {
   return badges.slice(0, 2);
 }
 
-function ExpandedMatchPreview({ match, details, loading, error }: {
+function ExpandedMatchPreview({ match, details, loading, error, onClose }: {
   match: MatchHistoryEntry;
   details: PostGameStats | null;
   loading: boolean;
   error: string | null;
+  onClose: () => void;
 }) {
   if (loading) return <div className="mh-expanded-state"><span className="mh-detail-spinner" /> Loading ten player performance...</div>;
   if (error) return <div className="mh-expanded-state mh-expanded-error">Could not load match details: {error}</div>;
@@ -4409,9 +4455,12 @@ function ExpandedMatchPreview({ match, details, loading, error }: {
           <strong>Performance ranking</strong>
           <span>Role adjusted LuvvyScore ranks all ten players from this match.</span>
         </div>
-        <button className="btn btn-sm" onClick={() => invoke("view_match_details", { gameId: match.game_id })}>
-          Full analysis
-        </button>
+        <div className="mh-expanded-actions">
+          <button className="btn btn-sm mh-back-profile" onClick={onClose}>← Back to profile</button>
+          <button className="btn btn-sm" onClick={() => invoke("view_match_details", { gameId: match.game_id })}>
+            Full analysis
+          </button>
+        </div>
       </div>
       <div className="mh-performance-teams">
         {details.teams.map((team, teamIndex) => {
@@ -4529,7 +4578,7 @@ function MatchHistoryRow({ match: m }: { match: MatchHistoryEntry }) {
         <span className="mh-ago">{ago}</span>
         <span className={`mh-expand-arrow ${expanded ? "mh-expand-arrow-open" : ""}`}>⌄</span>
       </div>
-      {expanded && <ExpandedMatchPreview match={m} details={details} loading={loading} error={detailError} />}
+      {expanded && <ExpandedMatchPreview match={m} details={details} loading={loading} error={detailError} onClose={() => setExpanded(false)} />}
     </div>
   );
 }
@@ -6103,55 +6152,130 @@ function PostGameView({ stats, showBack, onViewPlayer }: { stats: PostGameStats;
         )}
         <h3 className="section-title">Match Summary</h3>
       </div>
-      <div className="postgame-teams">
-        {sorted.map((team, ti) => {
-          const players = [...team.players].sort(
-            (a, b) => (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9)
-          );
-          return (
-            <div key={ti} className={`postgame-team ${team.is_winner ? "postgame-win" : "postgame-loss"}`}>
-              <div className="postgame-team-header">
-                <span className={`postgame-result ${team.is_winner ? "win" : "loss"}`}>
-                  {team.is_winner ? "Victory" : "Defeat"}
-                </span>
-                <span className="postgame-team-kda">
-                  {players.reduce((s, p) => s + p.kills, 0)} / {players.reduce((s, p) => s + p.deaths, 0)} / {players.reduce((s, p) => s + p.assists, 0)}
-                </span>
-              </div>
-              <div className="pg-col-headers">
-                <span className="pg-col-h pg-h-player">Player</span>
-                <span className="pg-col-h pg-h-kda">KDA</span>
-                <span className="pg-col-h pg-h-dmg">Damage</span>
-                <span className="pg-col-h pg-h-pct">DMG%</span>
-                <span className="pg-col-h pg-h-pct">KP</span>
-                <span className="pg-col-h pg-h-cs">CS</span>
-                <span className="pg-col-h pg-h-vis">Vision</span>
-                <span className="pg-col-h pg-h-gold">Gold</span>
-                <span className="pg-col-h pg-h-items">Items</span>
-              </div>
-              {players.map((p, pi) => (
-                <PostGameRow key={pi} player={p} maxDamage={maxDamage} team={team} onViewPlayer={onViewPlayer} />
-              ))}
-            </div>
-          );
-        })}
+      <div className="postgame-dashboard">
+        <PostGameVersusBoard teams={sorted} maxDamage={maxDamage} onViewPlayer={onViewPlayer} />
+        <aside className="postgame-sidebar">
+          {stats.gold_timeline.length > 0 && (
+            <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs} />
+          )}
+          <PostGameDamageBars teams={stats.teams} />
+        </aside>
       </div>
 
-      {stats.gold_timeline.length > 0 && (
-        <GoldDiffTimeline timeline={stats.gold_timeline} deaths={stats.death_events} duration={stats.game_duration_secs} />
-      )}
+      <PostGameMetrics stats={stats} />
 
-      <DamageProfilePanel stats={stats} />
-
-      {/* Unified performance panel (vs role-elo benchmark + phase trends) */}
-      {stats.game_duration_secs > 0 && (() => {
-        const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
-        if (!local || !local.rank) return null;
-        const tier = local.rank.split(" ")[0];
-        if (!tier || !ELO_BENCHMARKS[tier.toUpperCase()]) return null;
-        return <PerformancePanel player={local} duration={stats.game_duration_secs} tier={tier} phases={local.phase_stats} />;
-      })()}
+      <div className="postgame-secondary-hidden" aria-hidden="true">
+        <DamageProfilePanel stats={stats} />
+        {stats.game_duration_secs > 0 && (() => {
+          const local = stats.teams.flatMap(t => t.players).find(p => p.is_local);
+          if (!local || !local.rank) return null;
+          const tier = local.rank.split(" ")[0];
+          if (!tier || !ELO_BENCHMARKS[tier.toUpperCase()]) return null;
+          return <PerformancePanel player={local} duration={stats.game_duration_secs} tier={tier} phases={local.phase_stats} />;
+        })()}
+        {sorted.map((team, teamIndex) => team.players.map((player, playerIndex) => (
+          <PostGameRow key={`${teamIndex}-${playerIndex}`} player={player} maxDamage={maxDamage} team={team} onViewPlayer={onViewPlayer} />
+        )))}
+      </div>
     </div>
+  );
+}
+
+function PostGameVersusBoard({ teams, maxDamage, onViewPlayer }: {
+  teams: PostGameTeam[];
+  maxDamage: number;
+  onViewPlayer?: (puuid: string) => void;
+}) {
+  const first = [...(teams[0]?.players || [])].sort((a, b) => (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9));
+  const second = [...(teams[1]?.players || [])].sort((a, b) => (POS_ORDER[a.position] ?? 9) - (POS_ORDER[b.position] ?? 9));
+  const firstKills = first.reduce((sum, player) => sum + player.kills, 0);
+  const secondKills = second.reduce((sum, player) => sum + player.kills, 0);
+
+  return (
+    <section className="postgame-versus-board">
+      <div className="postgame-versus-header">
+        <span className={teams[0]?.is_winner ? "win" : "loss"}>{teams[0]?.is_winner ? "Victory" : "Defeat"}</span>
+        <strong>{firstKills} <small>/</small> {secondKills}</strong>
+        <span className={teams[1]?.is_winner ? "win" : "loss"}>{teams[1]?.is_winner ? "Victory" : "Defeat"}</span>
+      </div>
+      <div className="postgame-versus-list">
+        {Array.from({ length: Math.max(first.length, second.length) }, (_, index) => (
+          <div className="postgame-versus-row" key={index}>
+            {first[index] ? <PostGameCompactPlayer player={first[index]} maxDamage={maxDamage} onViewPlayer={onViewPlayer} /> : <span />}
+            <span className="postgame-versus-divider">VS</span>
+            {second[index] ? <PostGameCompactPlayer player={second[index]} maxDamage={maxDamage} onViewPlayer={onViewPlayer} enemy /> : <span />}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PostGameCompactPlayer({ player: p, maxDamage, onViewPlayer, enemy = false }: {
+  player: PostGamePlayer;
+  maxDamage: number;
+  onViewPlayer?: (puuid: string) => void;
+  enemy?: boolean;
+}) {
+  const champion = useChampionName(p.champion_id);
+  const damageWidth = Math.max(4, p.total_damage / maxDamage * 100);
+  return (
+    <div className={`postgame-compact-player ${enemy ? "postgame-compact-enemy" : ""} ${p.is_local ? "postgame-row-local" : ""}`}>
+      <ChampionIcon championId={p.champion_id} size={38} />
+      <div className="postgame-compact-identity">
+        <strong className={onViewPlayer ? "pg-player-link" : ""} onClick={() => onViewPlayer && p.puuid && onViewPlayer(p.puuid)}>
+          {p.summoner_name !== "Unknown" ? p.summoner_name : champion?.name || "Unknown"}
+          {p.is_mvp && <span className="mvp-badge">MVP</span>}
+        </strong>
+        <span>{champion?.name || ""}{p.rank ? ` · ${p.rank}` : ""}</span>
+        <div className="postgame-compact-damage"><span style={{ width: `${damageWidth}%` }} /></div>
+      </div>
+      <div className="postgame-compact-score">
+        <strong><b>{p.kills}</b> / <em>{p.deaths}</em> / {p.assists}</strong>
+        <span>{formatNumber(p.gold_earned)} gold · {Math.round(p.kill_participation * 100)}% KP</span>
+      </div>
+      <div className="postgame-compact-items">
+        {p.items.slice(0, 6).map((itemId, index) => <ItemIcon key={`${itemId}-${index}`} id={itemId} size={20} />)}
+      </div>
+    </div>
+  );
+}
+
+function PostGameDamageBars({ teams }: { teams: PostGameTeam[] }) {
+  const players = teams.flatMap(team => team.players.map(player => ({ player, won: team.is_winner })));
+  const max = Math.max(...players.map(({ player }) => player.total_damage), 1);
+  return (
+    <section className="postgame-damage-card">
+      <h4>Damage Dealt</h4>
+      <div className="postgame-damage-bars">
+        {players.map(({ player, won }, index) => (
+          <div className="postgame-damage-column" key={`${player.puuid}-${index}`} title={`${player.summoner_name}: ${formatNumber(player.total_damage)}`}>
+            <span className={won ? "damage-win" : "damage-loss"} style={{ height: `${Math.max(8, player.total_damage / max * 100)}%` }} />
+            <ChampionIcon championId={player.champion_id} size={18} />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PostGameMetrics({ stats }: { stats: PostGameStats }) {
+  const me = stats.teams.flatMap(team => team.players).find(player => player.is_local);
+  if (!me) return null;
+  const minutes = Math.max(1, stats.game_duration_secs / 60);
+  const kda = matchKda(me.kills, me.deaths, me.assists);
+  return (
+    <section className="postgame-metrics">
+      <div className="postgame-metric-tabs"><strong>Fighting</strong><span>Farming</span><span>Objectives</span><span>Vision</span></div>
+      <div className="postgame-metric-grid">
+        <ProfileStatRing value={`${Math.round(me.kill_participation * 100)}%`} label="Team participation" progress={me.kill_participation} tone="green" />
+        <ProfileStatRing value={`${Math.round(me.damage_share * 100)}%`} label="Damage share" progress={me.damage_share} tone="blue" />
+        <ProfileStatRing value={kda.toFixed(1)} label="KDA" progress={kda / 6} tone="gold" />
+        <ProfileStatRing value={(me.cs / minutes).toFixed(1)} label="CS per minute" progress={me.cs / minutes / 10} tone="green" />
+        <ProfileStatRing value={(me.vision_score / minutes).toFixed(1)} label="Vision per minute" progress={me.vision_score / minutes / 2} tone="blue" />
+        <ProfileStatRing value={Math.round(me.gold_earned / minutes).toString()} label="Gold per minute" progress={me.gold_earned / minutes / 600} tone="gold" />
+      </div>
+    </section>
   );
 }
 

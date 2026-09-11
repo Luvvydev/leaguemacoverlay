@@ -13,12 +13,13 @@
   --accent-green: #1fad4f;
   --accent-red: #e84057;
 
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 13px;
   line-height: 1.5;
   color: var(--text-primary);
   background: var(--bg-primary);
-  -webkit-font-smoothing: antialiased;
+  -webkit-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -1398,6 +1399,25 @@
 .mh-expanded-header > div { display: flex; flex-direction: column; }
 .mh-expanded-header strong { color: var(--accent-gold); font-size: 11px; text-transform: uppercase; letter-spacing: 0.7px; }
 .mh-expanded-header span { color: var(--text-muted); font-size: 9px; }
+.mh-expanded-header .btn {
+  appearance: none;
+  padding: 4px 9px;
+  border: 1px solid rgba(200, 155, 60, 0.45);
+  border-radius: 2px;
+  background: rgba(200, 155, 60, 0.08);
+  color: var(--accent-gold);
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+.mh-expanded-header .btn:hover { border-color: var(--accent-gold); background: rgba(200, 155, 60, 0.14); }
+.mh-expanded-actions { display: flex; align-items: center; gap: 6px; }
+.mh-expanded-header .mh-back-profile {
+  border-color: var(--border);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text-primary);
+}
+.mh-expanded-header .mh-back-profile:hover { border-color: var(--text-secondary); background: rgba(255, 255, 255, 0.06); }
 .mh-record-note {
   color: var(--text-muted);
   font-size: 8px;
@@ -3760,3 +3780,423 @@
 .build-path-picker-overlay .build-path-options { padding-bottom: 2px; }
 .ov-build-primary { margin: 0; padding: 2px 0 9px; }
 .ov-build-loading { color: var(--text-muted); font-size: 9px; }
+
+/* Porofessor-inspired information density and page structure. */
+:root {
+  --bg-primary: #1c2734;
+  --bg-card: #263445;
+  --bg-card-hover: #2d3c4e;
+  --border: #34465a;
+  --text-primary: #e5eaf0;
+  --text-secondary: #a7b2bf;
+  --text-muted: #708093;
+  --accent-blue: #38a9c7;
+  --accent-green: #31b77a;
+  --accent-red: #dd5a68;
+}
+
+.app { padding: 0 14px 14px; }
+.header {
+  min-height: 38px;
+  margin-bottom: 7px;
+  padding: 5px 0;
+  border-bottom-color: rgba(255, 255, 255, 0.045);
+}
+.header-left { gap: 7px; padding-left: 50px; }
+.logo { width: 21px; height: 21px; border-radius: 4px; font-size: 11px; }
+.app-title { font-size: 12px; }
+.header-right { gap: 7px; }
+.status-dot { width: 5px; height: 5px; }
+.summoner-name, .ranked-badge { font-size: 10px; }
+.display-preferences { display: none; }
+.toolbar {
+  width: 100%;
+  min-height: 28px;
+  margin-bottom: 8px;
+  padding: 3px 7px;
+  background: rgba(17, 25, 34, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.035);
+}
+.toolbar-toggles { gap: 10px; }
+.toggle-label { gap: 5px; font-size: 10px; }
+.toggle-slider { width: 25px; height: 14px; }
+.toggle-slider::after { width: 8px; height: 8px; }
+.toggle-label input:checked + .toggle-slider::after { left: 13px; }
+.toolbar .btn { display: none; }
+.select-sm { padding: 3px 20px 3px 6px; font-size: 10px; }
+
+.section-lobby {
+  width: 96%;
+  max-width: none;
+  margin-right: auto;
+  --text-secondary: #bac4cf;
+  --text-muted: #8f9cac;
+}
+.champ-select-layout,
+.lg-layout {
+  width: 96%;
+  max-width: none;
+  margin-right: auto;
+  margin-left: auto;
+}
+.postgame-layout {
+  width: 88%;
+  max-width: none;
+  margin-right: auto;
+}
+
+/* Out of game profile */
+.profile-page-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 1.18fr) minmax(250px, 0.96fr) minmax(250px, 1fr);
+  grid-template-rows: 70px 310px minmax(190px, 1fr);
+  min-height: calc(100vh - 92px);
+  align-items: start;
+  gap: 8px;
+}
+.profile-page-grid > .profile-overview { display: contents; }
+.profile-identity-card,
+.profile-ranked-card,
+.profile-champion-table,
+.profile-role-table,
+.profile-page-grid > .mh-layout {
+  background: rgba(38, 52, 69, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 2px;
+}
+.profile-identity-card {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-height: 70px;
+  padding: 7px 0;
+  background: transparent;
+  border: 0;
+}
+.profile-avatar-shell { width: 48px; height: 48px; padding: 1px; border-radius: 3px; }
+.profile-avatar, .profile-avatar-fallback { border-width: 1px; border-radius: 2px; }
+.profile-identity-copy { margin-left: 9px; }
+.profile-identity-copy h2 { margin: 0 0 4px; font-size: 18px; }
+.profile-label-list-inline { min-height: 0; margin: 0; }
+.profile-label { padding: 1px 5px; border-radius: 2px; font-size: 8px; letter-spacing: 0.35px; }
+.profile-ranked-card { grid-column: 1; grid-row: 2; min-height: 310px; padding: 10px 11px 9px; }
+.profile-card-title { color: var(--text-secondary); font-size: 10px; letter-spacing: 0.55px; }
+.profile-ranked-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 16px;
+  min-height: 246px;
+  padding: 27px 26px 0;
+}
+.profile-ranked-main .rank-emblem { flex: 0 0 auto; margin: 0; }
+.profile-ranked-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.profile-ranked-copy > strong { color: var(--text-primary); font-size: 18px; line-height: 1.1; }
+.profile-ranked-copy > span { color: var(--text-secondary); font-size: 11px; }
+.profile-ranked-copy .profile-main-role { margin-top: 5px; padding-left: 0; border-left: 0; }
+.profile-ranked-record {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.profile-ranked-record span { color: var(--text-muted); font-size: 9px; text-align: center; }
+.profile-ranked-record b { color: var(--text-primary); font-size: 12px; }
+.profile-ranked-card > .profile-summary-card { display: none; }
+.profile-secondary-hidden, .postgame-secondary-hidden { display: none; }
+
+.profile-champion-table,
+.profile-role-table { min-width: 0; padding: 10px; }
+.profile-champion-table { grid-column: 2; grid-row: 2 / span 2; min-height: 0; height: 100%; align-self: stretch; }
+.profile-role-table { grid-column: 3; grid-row: 2; }
+.profile-champion-header { padding-bottom: 7px; }
+.profile-card-subtitle,
+.profile-champion-count { font-size: 10px; }
+.profile-champion-columns,
+.profile-champion-row { grid-template-columns: minmax(110px, 1.35fr) 48px 58px; gap: 6px; }
+.profile-champion-columns { font-size: 9px; }
+.profile-champion-row { min-height: 53px; padding: 6px 4px; }
+.profile-champion-name strong { font-size: 11px; }
+.profile-champion-name span { font-size: 10px; }
+.profile-champion-metric strong { font-size: 11px; }
+.profile-role-columns,
+.profile-role-row {
+  display: grid;
+  grid-template-columns: minmax(85px, 1fr) 42px 52px;
+  align-items: center;
+  gap: 6px;
+}
+.profile-role-columns {
+  padding: 8px 4px 5px;
+  color: var(--text-muted);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.profile-role-columns span:not(:first-child), .profile-role-row > strong { text-align: right; }
+.profile-role-row { min-height: 45px; padding: 6px 4px; border-top: 1px solid rgba(255, 255, 255, 0.04); }
+.profile-role-name { display: flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 11px; font-weight: 650; }
+.profile-role-row strong { font-size: 11px; }
+.profile-role-empty { display: block; padding: 14px 4px; color: var(--text-muted); font-size: 9px; }
+
+.profile-page-grid > .mh-layout { grid-column: 1; grid-row: 3; height: 100%; max-height: none; padding: 9px; overflow: hidden; }
+.profile-page-grid > .mh-layout .mh-header { margin-bottom: 7px; }
+.profile-page-grid > .mh-layout .mh-summary { gap: 5px; }
+.profile-page-grid > .mh-layout .mh-streak,
+.profile-page-grid > .mh-layout .mh-record-note,
+.profile-page-grid > .mh-layout .champ-stats-bar,
+.profile-page-grid > .mh-layout .mh-trend,
+.profile-page-grid > .mh-layout .mh-kda-bar,
+.profile-page-grid > .mh-layout .mh-cs-minute,
+.profile-page-grid > .mh-layout .mh-history-items,
+.profile-page-grid > .mh-layout .mh-spacer,
+.profile-page-grid > .mh-layout .mh-expand-arrow { display: none; }
+.profile-page-grid > .mh-layout .mh-mode-tabs { gap: 2px; margin-bottom: 6px; overflow: hidden; }
+.profile-page-grid > .mh-layout .mh-mode-tab { padding: 3px 6px; border-radius: 2px; font-size: 9px; }
+.profile-page-grid > .mh-layout .mh-mode-count { display: none; }
+.profile-page-grid > .mh-layout .mh-list { height: calc(100% - 59px); max-height: none; gap: 2px; overflow-y: auto; }
+.profile-page-grid > .mh-layout .mh-match-card,
+.profile-page-grid > .mh-layout .btn-show-more { flex: 0 0 auto; }
+.profile-page-grid > .mh-layout .mh-row { gap: 6px; min-height: 44px; padding: 5px 6px; border-radius: 2px; }
+.profile-page-grid > .mh-layout .mh-row .champ-icon { width: 30px !important; height: 30px !important; }
+.profile-page-grid > .mh-layout .mh-result { width: 11px; font-size: 10px; }
+.profile-page-grid > .mh-layout .mh-info { width: 82px; }
+.profile-page-grid > .mh-layout .mh-champ { font-size: 10px; }
+.profile-page-grid > .mh-layout .mh-mode,
+.profile-page-grid > .mh-layout .pg-kda-ratio { font-size: 9px; }
+.profile-page-grid > .mh-layout .mh-kda-col { width: 56px; }
+.profile-page-grid > .mh-layout .pg-kda { font-size: 10px; }
+.profile-page-grid > .mh-layout .mh-duration { width: 25px; font-size: 9px; }
+.profile-page-grid > .mh-layout .mh-ago { width: 44px; font-size: 9px; }
+.profile-page-grid > .mh-layout .mh-row-badges { margin-left: auto; gap: 3px; flex-wrap: nowrap; }
+.profile-page-grid > .mh-layout .mh-row-badges .profile-label { font-size: 8px; padding: 1px 4px; }
+
+/* Focus the profile on one expanded match so the ten-player table stays readable. */
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .profile-overview,
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .profile-champion-table,
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .profile-role-table {
+  display: none;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .mh-layout {
+  grid-column: 1;
+  grid-row: 1;
+  height: calc(100vh - 92px);
+  min-height: 560px;
+  padding: 12px;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .mh-layout .mh-header { margin-bottom: 8px; }
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .mh-layout .mh-mode-tabs { display: none; }
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) > .mh-layout .mh-list {
+  height: calc(100% - 30px);
+  gap: 0;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-match-card:not(.mh-match-card-open),
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .btn-show-more {
+  display: none;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-expanded {
+  padding: 14px 16px;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-teams {
+  grid-template-columns: repeat(auto-fit, minmax(min(520px, 100%), 1fr));
+  gap: 12px;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-row {
+  min-height: 52px;
+  font-size: 10px;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-head,
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-row {
+  grid-template-columns: 28px minmax(130px, 1fr) 55px 44px minmax(195px, 1.3fr);
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-player strong { font-size: 11px; }
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-player span { font-size: 9px; }
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score { width: 100%; }
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score .mh-row-badges {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-performance-score .profile-label {
+  padding: 2px 5px;
+  font-size: 8px;
+}
+.profile-page-grid:has(> .mh-layout .mh-match-card-open) .mh-score-note { font-size: 9px; }
+
+/* Champion select: two five-player rows with the useful build at the right. */
+.champ-select-layout { gap: 6px; }
+.champ-select-layout .cs-recs-bar { width: calc(100% - 328px); border-radius: 2px; padding: 6px 8px; }
+.champ-select-layout .cs-rec-card { min-width: 126px; max-width: 148px; padding: 5px 6px; border-radius: 2px; }
+.champ-select-layout .cs-rec-card-foot { gap: 2px; }
+.champ-select-layout .cs-rec-card-foot .cs-rec-reason:nth-child(n+3) { display: none; }
+.cs-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: max-content max-content;
+  position: relative;
+  align-content: start;
+  gap: 6px 8px;
+}
+.cs-left, .cs-right { width: auto; overflow: visible; }
+.cs-left { grid-column: 1; grid-row: 1; }
+.cs-right { grid-column: 1; grid-row: 2; }
+.cs-center {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  gap: 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.cs-team { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; }
+.cs-team-label { display: none; }
+.cs-player {
+  min-width: 0;
+  min-height: 112px;
+  margin: 0;
+  padding: 7px 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  border-radius: 2px;
+  border-top: 2px solid var(--accent-blue);
+}
+.cs-right .cs-player { border-top-color: var(--accent-red); }
+.cs-right .cs-team { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; }
+.cs-right .cs-player { width: calc(20% - 3px); }
+.cs-player > .champ-icon, .cs-player > .champ-icon-empty { width: 32px !important; height: 32px !important; }
+.cs-player-info .draft-champ-name { font-size: 11px; }
+.cs-player-pos { display: block; margin-top: 3px; font-size: 9px; }
+.cs-player .matchup-badge { margin-top: auto; padding: 1px 4px; font-size: 9px; }
+.cs-bans { grid-column: 1 / -1; margin-top: 3px; padding-top: 5px; }
+.cs-bans .champ-icon { width: 18px !important; height: 18px !important; }
+.champ-select-layout .cs-center > :not(.section-build):not(.cs-empty) { display: none; }
+.champ-select-layout .champion-card { margin-bottom: 5px; padding: 8px; border-radius: 2px; }
+.champ-select-layout .champion-avatar { width: 38px; height: 38px; border-radius: 2px; }
+.champ-select-layout .champion-name { font-size: 12px; }
+.champ-select-layout .build-grid { gap: 4px; }
+.champ-select-layout .build-row-top { gap: 4px; }
+.champ-select-layout .build-card { padding: 7px 8px; border-radius: 2px; }
+.champ-select-layout .alt-tabs { justify-content: flex-end; flex-wrap: wrap; }
+.champ-select-layout .alt-tab { padding: 2px 5px; font-size: 9px; }
+.champ-select-layout .alt-tab-style { font-size: 7px; }
+.champ-select-layout .card-label { font-size: 10px; }
+.champ-select-layout .spell-slot { width: 28px; height: 28px; border-radius: 2px; }
+.champ-select-layout .skill-pip { width: 24px; height: 24px; border-radius: 2px; font-size: 10px; }
+.champ-select-layout .rune-display { transform-origin: top left; }
+.champ-select-layout .item-option-row { padding: 3px 4px; }
+
+/* Post match: one comparison board, one chart rail, one compact metric panel. */
+.postgame-layout { padding-bottom: 6px; }
+.postgame-title-row { margin-bottom: 6px; }
+.postgame-dashboard { display: grid; grid-template-columns: minmax(0, 1fr) 250px; align-items: start; gap: 8px; }
+.postgame-versus-board,
+.postgame-damage-card,
+.postgame-metrics,
+.postgame-sidebar .gold-timeline-panel {
+  background: rgba(38, 52, 69, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 2px;
+}
+.postgame-versus-header {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 6px 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+.postgame-versus-header > span:last-child { text-align: right; }
+.postgame-versus-header .win { color: var(--accent-green); }
+.postgame-versus-header .loss { color: var(--accent-red); }
+.postgame-versus-header strong { color: var(--text-primary); font-size: 14px; }
+.postgame-versus-header small { color: var(--text-muted); }
+.postgame-versus-row { display: grid; grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr); border-top: 1px solid rgba(255, 255, 255, 0.035); }
+.postgame-versus-row:first-child { border-top: 0; }
+.postgame-versus-divider { align-self: center; color: var(--text-muted); font-size: 9px; font-weight: 800; text-align: center; }
+.postgame-compact-player {
+  display: grid;
+  grid-template-columns: 44px minmax(86px, 1fr) auto;
+  align-items: center;
+  gap: 5px 7px;
+  min-width: 0;
+  min-height: 78px;
+  padding: 8px 9px;
+  border-left: 2px solid var(--accent-blue);
+}
+.postgame-compact-enemy { border-right: 2px solid var(--accent-red); border-left: 0; }
+.postgame-compact-player.postgame-row-local { padding-left: 7px; border-left-color: var(--accent-gold); background: rgba(200, 155, 60, 0.06); }
+.postgame-compact-identity { display: flex; min-width: 0; flex-direction: column; }
+.postgame-compact-player > .champ-icon { width: 44px !important; height: 44px !important; }
+.postgame-compact-identity > strong { overflow: hidden; color: var(--text-primary); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.postgame-compact-identity > span { overflow: hidden; color: var(--text-muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.postgame-compact-damage { height: 3px; margin-top: 4px; overflow: hidden; background: rgba(0, 0, 0, 0.25); }
+.postgame-compact-damage span { display: block; height: 100%; background: var(--accent-red); }
+.postgame-compact-score { display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
+.postgame-compact-score strong { color: var(--text-secondary); font-size: 11px; font-style: normal; }
+.postgame-compact-score strong b { color: var(--accent-green); }
+.postgame-compact-score strong em { color: var(--accent-red); font-style: normal; }
+.postgame-compact-score span { color: var(--text-muted); font-size: 9px; }
+.postgame-compact-items { display: flex; grid-column: 2 / 4; gap: 2px; }
+.postgame-compact-items .tt-wrap { width: 24px; height: 24px; overflow: hidden; }
+.postgame-compact-player .mvp-badge { padding: 0 3px; font-size: 7px; }
+.postgame-sidebar { display: flex; flex-direction: column; gap: 8px; }
+.postgame-sidebar .gold-timeline-panel { height: 180px; margin: 0; padding: 10px; }
+.postgame-sidebar .gold-timeline-header { margin-bottom: 3px; }
+.postgame-sidebar .gold-timeline-stats { display: none; }
+.postgame-sidebar .gold-timeline-svg { height: 132px; }
+.postgame-damage-card { height: 180px; padding: 10px; }
+.postgame-damage-card h4 { color: var(--text-secondary); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.postgame-damage-bars { display: flex; align-items: flex-end; gap: 3px; height: 143px; padding-top: 8px; }
+.postgame-damage-column { display: flex; flex: 1; height: 100%; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; }
+.postgame-damage-column > span { width: 72%; min-height: 8px; }
+.postgame-damage-column .damage-win { background: rgba(56, 169, 199, 0.78); }
+.postgame-damage-column .damage-loss { background: rgba(221, 90, 104, 0.78); }
+.postgame-damage-column .champ-icon { border-radius: 1px; }
+.postgame-metrics { width: calc(100% - 258px); margin-top: 8px; padding: 0 9px 9px; }
+.postgame-metric-tabs { display: flex; gap: 17px; height: 32px; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.055); color: var(--text-muted); font-size: 10px; }
+.postgame-metric-tabs strong { height: 30px; padding-top: 9px; border-bottom: 2px solid var(--accent-blue); color: var(--text-primary); }
+.postgame-metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px 8px; padding: 12px 4px 4px; }
+.postgame-metric-grid .profile-stat-ring { width: 58px; height: 58px; }
+.postgame-metric-grid .profile-stat-ring-inner { font-size: 13px; }
+.postgame-metric-grid .profile-stat-ring-wrap { font-size: 9px; }
+
+/* Player drilldown: use the same left aligned canvas as the related game view. */
+.profile-overlay {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 46px 12px 12px;
+}
+.profile-panel {
+  width: 84%;
+  max-width: none;
+  max-height: calc(100vh - 58px);
+  padding: 10px;
+  border-radius: 2px;
+}
+.profile-loading-panel {
+  width: 280px;
+  max-width: 280px;
+  margin: auto;
+}
+.profile-panel .profile-header { margin-bottom: 8px; padding-bottom: 7px; }
+.profile-panel .profile-name { font-size: 13px; }
+
+@media (max-width: 1050px) {
+  .toolbar { width: 100%; }
+  .profile-page-grid { grid-template-columns: minmax(280px, 1.18fr) minmax(230px, 0.96fr) minmax(220px, 1fr); }
+  .cs-main { grid-template-columns: minmax(0, 1fr) 260px; }
+  .cs-center { width: 260px; }
+  .champ-select-layout .cs-recs-bar { width: calc(100% - 268px); }
+  .postgame-dashboard { grid-template-columns: minmax(0, 1fr) 220px; }
+  .postgame-metrics { width: calc(100% - 228px); }
+  .postgame-compact-score span { display: none; }
+  .postgame-compact-items .tt-wrap:nth-child(n+5) { display: none; }
+}
